@@ -62,7 +62,10 @@ export function usulkanAturan(nilai: string[]): UsulAturan {
   if (totalTerisi === 0) {
     return {
       status: 'tidak-yakin',
-      alasan: 'Kolom ini tidak berisi satu jawaban pun, sehingga aturannya tidak dapat ditebak.',
+      alasan:
+        'Kolom ini tidak berisi satu jawaban pun, sehingga aturannya tidak dapat ditebak. ' +
+        'Periksa apakah berkas yang diunggah sudah benar; bila kolom ini memang tidak dipakai, ' +
+        'pilih aturan abaikan atau jadikan kolom meta.',
       contohNilai: [],
     };
   }
@@ -101,7 +104,7 @@ export function usulkanAturan(nilai: string[]): UsulAturan {
   }
 
   for (const skala of SKALA) {
-    const semuaDikenal = bentukTerlihat.every((bentuk) => skala.peta[bentuk] !== undefined);
+    const semuaDikenal = bentukTerlihat.every((bentuk) => Object.hasOwn(skala.peta, bentuk));
     if (!semuaDikenal) continue;
 
     // skorMaks tidak pernah diturunkan dari data, jadi skala yang tidak lengkap
@@ -123,7 +126,7 @@ export function usulkanAturan(nilai: string[]): UsulAturan {
 
     return {
       status: 'usul',
-      aturan: { jenis: 'peta-opsi', peta: skala.peta, skorMaks: skala.skorMaks },
+      aturan: { jenis: 'peta-opsi', peta: { ...skala.peta }, skorMaks: skala.skorMaks },
       alasan: `Seluruh ${skala.skorMaks} opsi ${skala.nama} muncul pada kolom ini.`,
     };
   }

@@ -54,6 +54,19 @@ describe('usulkanAturan mengenali skala yang dikenal', () => {
     const usul = usulkanAturan(LIKERT_INGGRIS);
     expect(usul.alasan.toLowerCase()).toContain('likert');
   });
+
+  it('memberi salinan peta, sehingga menyunting satu usulan tidak mengubah usulan lain', () => {
+    // Rancangan disunting di tempat. Bila petanya dibagi bersama, melengkapi peta
+    // satu kolom diam-diam mengubah seluruh kolom dan seluruh rancangan berikutnya.
+    const pertama = usulkanAturan(LIKERT_INGGRIS);
+    if (pertama.status !== 'usul' || pertama.aturan.jenis !== 'peta-opsi') throw new Error('seharusnya usul');
+    pertama.aturan.peta['maybe'] = 3;
+
+    const kedua = usulkanAturan(LIKERT_INGGRIS);
+    if (kedua.status !== 'usul' || kedua.aturan.jenis !== 'peta-opsi') throw new Error('seharusnya usul');
+    expect(kedua.aturan.peta['maybe']).toBeUndefined();
+    expect(Object.keys(kedua.aturan.peta)).toHaveLength(5);
+  });
 });
 
 describe('usulkanAturan berisik saat ragu', () => {
@@ -110,6 +123,19 @@ describe('usulkanAturan berisik saat ragu', () => {
 
   it('tidak menebak untuk kolom yang seluruhnya kosong', () => {
     expect(usulkanAturan(['', '  ', '']).status).toBe('tidak-yakin');
+  });
+
+  it('memberi langkah berikutnya untuk kolom yang seluruhnya kosong', () => {
+    const usul = usulkanAturan(['', '  ']);
+    expect(usul.alasan).toContain('abaikan');
+    expect(usul.alasan).toContain('Periksa');
+  });
+
+  it('tidak tertipu nilai yang namanya sama dengan properti bawaan objek', () => {
+    // "constructor" dan "__proto__" selalu ada pada objek biasa lewat warisan.
+    const usul = usulkanAturan(['constructor', '__proto__', 'Agree']);
+    expect(usul.status).toBe('tidak-yakin');
+    expect(usul.alasan).toContain('tidak cocok dengan skala mana pun');
   });
 
   it('tidak menebak untuk kolom tanpa satu nilai pun', () => {
