@@ -133,6 +133,37 @@ describe('periksaSkema menolak skema yang cacat', () => {
     expect(hasil.masalah.map((m) => m.jenis)).toContain('kolom-tidak-ada');
   });
 
+  it('tidak menolak kriteria manual yang memang tidak ada di data', () => {
+    // Kolom manual diisi penilai, bukan responden, jadi ia tidak punya padanan
+    // di spreadsheet. Menandainya sebagai kolom-tidak-ada akan membuat setiap
+    // skema yang mencampur kriteria manual selamanya tidak bisa disimpan.
+    const hasil = periksaSkema(
+      skema([
+        BUTIR_LIKERT,
+        {
+          kolomAsal: 'wawancara',
+          label: 'Wawancara',
+          dimensi: 'lisan',
+          aturan: { jenis: 'manual', min: 0, maks: 100 },
+          bobot: 2,
+        },
+      ]),
+      baris([{ q1: 'Agree' }]),
+    );
+    expect(hasil.masalah).toHaveLength(0);
+    expect(hasil.bolehDisimpan).toBe(true);
+  });
+
+  it('tidak melaporkan opsi tak dikenal untuk kolom berkunci jawaban', () => {
+    // Jawaban yang tidak sama dengan kunci berarti salah, bukan berarti tak dikenali.
+    const hasil = periksaSkema(
+      skema([{ ...BUTIR_LIKERT, aturan: { jenis: 'kunci-jawaban', kunci: 'B' } }]),
+      baris([{ q1: 'C' }, { q1: 'D' }]),
+    );
+    expect(hasil.masalah).toHaveLength(0);
+    expect(hasil.bolehDisimpan).toBe(true);
+  });
+
   it('melaporkan seluruh masalah sekaligus, bukan berhenti di yang pertama', () => {
     const hasil = periksaSkema(
       skema([

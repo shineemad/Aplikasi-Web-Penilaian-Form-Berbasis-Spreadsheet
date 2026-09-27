@@ -64,12 +64,14 @@ export function periksaSkema(skema: Skema, baris: JawabanResponden[]): HasilPeri
       }
     }
 
+    if (butir.aturan.jenis !== 'peta-opsi' && butir.aturan.jenis !== 'kunci-jawaban') continue;
+
+    // Pemeriksaan ini hanya berlaku bagi kolom yang diisi responden. Kolom manual
+    // memang tidak punya padanan di data impor karena nilainya diketik penilai.
     if (baris.length > 0 && !kolomTersedia.has(kolomAsal)) {
       masalah.push({ jenis: 'kolom-tidak-ada', kolomAsal, label });
       continue;
     }
-
-    if (butir.aturan.jenis !== 'peta-opsi' && butir.aturan.jenis !== 'kunci-jawaban') continue;
 
     const dikenal = new Set<string>();
     if (butir.aturan.jenis === 'peta-opsi') {
