@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 import type { HasilIndeksDimensi } from './aggregator';
 import type { BarisGabungan, HasilGabungan } from './merger';
 import { TANDA_KOSONG } from './penyajian';
-import { bangunTabelGabungan, bangunTabelRingkasan } from './tabelTampil';
+import { bangunTabelGabungan, bangunTabelRingkasan, pastikanTabelSah } from './tabelTampil';
+import type { TabelTampil } from './tabelTampil';
 
 function baris(ubah: Partial<BarisGabungan>): BarisGabungan {
   return {
@@ -187,4 +188,100 @@ describe('bangunTabelRingkasan', () => {
       TANDA_KOSONG,
     ]);
   });
+});
+
+describe('pastikanTabelSah', () => {
+  const sah: TabelTampil = {
+    judul: 'Rekap Gabungan',
+    kolom: ['ID', 'Nilai'],
+    baris: [['id1', '40,0']],
+    kolomIdentitas: 1,
+  };
+
+  it('meloloskan tabel yang barisnya sepanjang kolom', () => {
+    expect(() => pastikanTabelSah(sah)).not.toThrow();
+  });
+
+  it('meloloskan tabel tanpa baris data', () => {
+    // Sesi yang belum diisi siapa pun memang menghasilkan tabel tanpa baris.
+    expect(() => pastikanTabelSah({ ...sah, baris: [] })).not.toThrow();
+  });
+
+  it('menolak tabel tanpa kolom', () => {
+    expect(() => pastikanTabelSah({ ...sah, kolom: [], baris: [], kolomIdentitas: 0 })).toThrow(
+      /tidak punya satu kolom pun/,
+    );
+  });
+
+  it('menolak baris yang kurang sel dan menyebut indeks barisnya', () => {
+    const tabel = { ...sah, baris: [['id1', '40,0'], ['id2']] };
+    expect(() => pastikanTabelSah(tabel)).toThrow(/Baris ke-1/);
+  });
+
+  it('menolak baris yang kelebihan sel', () => {
+    const tabel = { ...sah, baris: [['id1', '40,0', 'nyasar']] };
+    expect(() => pastikanTabelSah(tabel)).toThrow(/Baris ke-0/);
+  });
+
+  it('menolak kolomIdentitas di luar rentang atau bukan bilangan bulat', () => {
+    expect(() => pastikanTabelSah({ ...sah, kolomIdentitas: -1 })).toThrow(/kolomIdentitas/);
+    expect(() => pastikanTabelSah({ ...sah, kolomIdentitas: 3 })).toThrow(/kolomIdentitas/);
+    expect(() => pastikanTabelSah({ ...sah, kolomIdentitas: 1.5 })).toThrow(/kolomIdentitas/);
+  });
+
+  it('menerima kolomIdentitas nol dan sepanjang kolom', () => {
+    expect(() => pastikanTabelSah({ ...sah, kolomIdentitas: 0 })).not.toThrow();
+    expect(() => pastikanTabelSah({ ...sah, kolomIdentitas: 2 })).not.toThrow();
+  });
+});
+
+describe('bentuk tabel dari pembangun sesungguhnya', () => {
+  // Penjaga hanya berguna bila pembangunnya memang selalu lolos. Seluruh varian
+  // diperiksa di sini supaya Excel dan PDF tidak pernah punya kesempatan berbeda.
+  const daftar: [string, TabelTampil][] = [
+    ['gabungan biasa', bangunTabelGabungan(hasil([baris({})]), OPSI)],
+    ['gabungan anonim', bangunTabelGabungan(hasil([baris({})]), { ...OPSI, anonim: true })],
+    [
+      'gabungan tanpa pembanding',
+      bangunTabelGabungan(hasil([baris({})]), { ...OPSI, adaPembanding: false }),
+    ],
+    [
+      'gabungan anonim tanpa pembanding',
+      bangunTabelGabungan(hasil([baris({})]), { ...OPSI, anonim: true, adaPembanding: false }),
+    ],
+    [
+      'gabungan dengan meta yang tidak merata dan nilai kosong',
+      bangunTabelGabungan(
+        hasil([
+          baris({ meta: { Gender: 'female' } }),
+          baris({
+            id: 'id2',
+            nama: null,
+            meta: { Age: '20' },
+            nilaiPerSesi: { s1: 40 },
+            statusPerSesi: { s1: 'ikut' },
+            selisih: null,
+          }),
+        ]),
+        OPSI,
+      ),
+    ],
+    ['gabungan tanpa baris', bangunTabelGabungan(hasil([]), OPSI)],
+    [
+      'ringkasan dimensi',
+      bangunTabelRingkasan(
+        [{ dimensi: 'kemudahan', indeks: 80.996, pasanganDihitung: 100 }],
+        70,
+        { desimal: 1 },
+      ),
+    ],
+  ];
+
+  for (const [nama, tabel] of daftar) {
+    it(`menghasilkan baris sepanjang kolom pada ${nama}`, () => {
+      expect(tabel.kolom.length).toBeGreaterThan(0);
+      for (const satu of tabel.baris) expect(satu).toHaveLength(tabel.kolom.length);
+      expect(() => pastikanTabelSah(tabel)).not.toThrow();
+    });
+  }
 });

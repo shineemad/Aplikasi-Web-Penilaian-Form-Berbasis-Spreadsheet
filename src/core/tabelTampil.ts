@@ -28,6 +28,44 @@ function kunciMeta(hasil: HasilGabungan): string[] {
   return [...kunci].sort();
 }
 
+/**
+ * Menolak tabel yang barisnya tidak sepanjang kolomnya. Tanpa penjaga ini Excel
+ * dan PDF bisa mencetak isi berbeda dari tabel yang sama: baris kurang sel
+ * membuat Excel mengosongkan sel sementara PDF menebaknya, dan baris lebih sel
+ * membuat Excel menambah kolom tanpa judul sementara PDF membuangnya diam-diam.
+ */
+export function pastikanTabelSah(tabel: TabelTampil): void {
+  const jumlahKolom = tabel.kolom.length;
+
+  if (jumlahKolom === 0) {
+    throw new Error(
+      `Tabel "${tabel.judul}" tidak punya satu kolom pun, padahal tabel tanpa kolom tidak bisa ` +
+        'dicetak ke Excel maupun PDF. Bangun tabelnya lewat bangunTabelGabungan atau ' +
+        'bangunTabelRingkasan, jangan menyusun objek TabelTampil sendiri.',
+    );
+  }
+
+  for (let i = 0; i < tabel.baris.length; i += 1) {
+    const baris = tabel.baris[i];
+    if (baris === undefined || baris.length === jumlahKolom) continue;
+    throw new Error(
+      `Baris ke-${i} pada tabel "${tabel.judul}" berisi ${baris === undefined ? 0 : baris.length} ` +
+        `sel, padahal tabelnya punya ${jumlahKolom} kolom. Setiap baris harus sepanjang kolom: ` +
+        'bila tidak, Excel dan PDF akan mencetak isi yang berbeda untuk tabel yang sama. ' +
+        'Pakai TANDA_KOSONG untuk sel yang memang tidak ada isinya, jangan menghilangkan selnya.',
+    );
+  }
+
+  const { kolomIdentitas } = tabel;
+  if (!Number.isInteger(kolomIdentitas) || kolomIdentitas < 0 || kolomIdentitas > jumlahKolom) {
+    throw new Error(
+      `kolomIdentitas tabel "${tabel.judul}" bernilai ${kolomIdentitas}, padahal ia harus bilangan ` +
+        `bulat antara 0 dan ${jumlahKolom} (jumlah kolom tabel ini). Nilai itu menentukan berapa ` +
+        'kolom terdepan yang diulang pada tiap potongan saat tabel dipecah di PDF.',
+    );
+  }
+}
+
 export function bangunTabelGabungan(hasil: HasilGabungan, opsi: OpsiTabel): TabelTampil {
   const meta = kunciMeta(hasil);
 

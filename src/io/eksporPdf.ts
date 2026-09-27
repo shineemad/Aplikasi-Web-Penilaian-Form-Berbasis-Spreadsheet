@@ -1,5 +1,6 @@
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { pastikanTabelSah } from '../core/tabelTampil';
 import type { TabelTampil } from '../core/tabelTampil';
 import { rencanakanHalaman } from '../core/tataLetak';
 import type { MuatKolom } from '../core/tataLetak';
@@ -30,6 +31,19 @@ function orientasiJsPdf(orientasi: 'potret' | 'lanskap'): 'portrait' | 'landscap
   return orientasi === 'lanskap' ? 'landscape' : 'portrait';
 }
 
+/** Melempar alih-alih mengosongkan: sel yang hilang harus terlihat, bukan tersamar. */
+function ambilSel(deret: string[], indeks: number, keterangan: string): string {
+  const isi = deret[indeks];
+  if (isi === undefined) {
+    throw new Error(
+      `${keterangan} meminta kolom ke-${indeks}, padahal hanya ada ${deret.length} sel di sana. ` +
+        'Ini berarti rencana halaman dan bentuk tabel tidak lagi sejalan; jangan tulis PDF ' +
+        'dengan sel kosong sebagai gantinya, karena sel kosong terbaca sebagai nilai nol.',
+    );
+  }
+  return isi;
+}
+
 export function tulisPdf(tabel: TabelTampil[], kepala: KepalaLaporan): Uint8Array;
 export function tulisPdf(
   tabel: TabelTampil[],
@@ -41,6 +55,8 @@ export function tulisPdf(
   kepala: KepalaLaporan,
   opsi?: { kembalikanInfo: true },
 ): Uint8Array | InfoPdf {
+  for (const satu of tabel) pastikanTabelSah(satu);
+
   const rencanaPerTabel = tabel.map((satu) =>
     rencanakanHalaman(satu.kolom.length, satu.kolomIdentitas, MUAT),
   );
@@ -67,8 +83,10 @@ export function tulisPdf(
     for (const potongan of rencana.potongan) {
       autoTable(doc, {
         startY: mulaiY,
-        head: [potongan.map((k) => satu.kolom[k] ?? '')],
-        body: satu.baris.map((baris) => potongan.map((k) => baris[k] ?? '')),
+        head: [potongan.map((k) => ambilSel(satu.kolom, k, `Kepala tabel "${satu.judul}"`))],
+        body: satu.baris.map((baris, n) =>
+          potongan.map((k) => ambilSel(baris, k, `Baris ke-${n} tabel "${satu.judul}"`)),
+        ),
         styles: { fontSize: 8 },
         // Kepala tabel diulang di tiap halaman supaya tabel panjang tetap terbaca.
         showHead: 'everyPage',

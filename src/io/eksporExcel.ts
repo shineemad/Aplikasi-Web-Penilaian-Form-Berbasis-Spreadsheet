@@ -1,10 +1,13 @@
 import * as XLSX from 'xlsx';
+import { pastikanTabelSah } from '../core/tabelTampil';
 import type { TabelTampil } from '../core/tabelTampil';
 
 /** Batas nama lembar pada format .xlsx. */
 const PANJANG_MAKS_NAMA = 31;
 
 export function tulisExcel(tabel: TabelTampil[]): ArrayBuffer {
+  for (const satu of tabel) pastikanTabelSah(satu);
+
   if (tabel.length === 0) {
     throw new Error(
       'tulisExcel dipanggil tanpa satu tabel pun untuk ditulis, padahal berkas Excel harus berisi ' +
