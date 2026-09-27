@@ -6,15 +6,25 @@ function sesi(
   sesiId: string,
   namaSesi: string,
   skemaId: string,
-  isi: Record<string, { nilai: number | null; email: string; nama: string | null }>,
+  isi: Record<
+    string,
+    { nilai: number | null; email: string; nama: string | null; kurang?: number }
+  >,
 ): NilaiSesi {
   const nilai = new Map<string, number | null>();
-  const identitas = new Map<string, { email: string; nama: string | null }>();
+  const identitas = new Map<
+    string,
+    { email: string; nama: string | null; meta: Record<string, string> }
+  >();
+  const kurang = new Map<string, number>();
+  const peringatan = new Map<string, string[]>();
+
   for (const [id, data] of Object.entries(isi)) {
     nilai.set(id, data.nilai);
-    identitas.set(id, { email: data.email, nama: data.nama });
+    identitas.set(id, { email: data.email, nama: data.nama, meta: {} });
+    if (data.kurang !== undefined) kurang.set(id, data.kurang);
   }
-  return { sesiId, namaSesi, skemaId, nilai, identitas };
+  return { sesiId, namaSesi, skemaId, nilai, identitas, kurang, peringatan };
 }
 
 const PRE = sesi('s1', 'Pre-Test', 'skemaA', {
@@ -122,6 +132,19 @@ describe('gabungkanSesi', () => {
     });
     const { urutanSesi } = gabungkanSesi([PRE, TENGAH, POST], PEMBANDING);
     expect(urutanSesi.map((s) => s.sesiId)).toEqual(['s1', 's3', 's2']);
+  });
+
+  it('menyatakan berapa kolom yang kurang pada sesi yang diikuti', () => {
+    const preKurang = sesi('s1', 'Pre-Test', 'skemaA', {
+      budi: { nilai: 40, email: 'budi@example.com', nama: 'Budi', kurang: 3 },
+    });
+    const postBudi = sesi('s2', 'Post-Test', 'skemaA', {
+      budi: { nilai: 80, email: 'budi@example.com', nama: 'Budi' },
+    });
+    const { baris } = gabungkanSesi([preKurang, postBudi], PEMBANDING);
+    expect(baris[0]?.statusPerSesi['s1']).toBe('ikut:kurang 3');
+    expect(baris[0]?.statusPerSesi['s2']).toBe('ikut');
+    expect(baris[0]?.statusGabungan).toBe('lengkap');
   });
 });
 

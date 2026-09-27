@@ -5,7 +5,11 @@ export interface NilaiSesi {
   /** respondenId -> nilai akhir sesi itu */
   nilai: Map<string, number | null>;
   /** respondenId -> identitas sebagaimana tercatat di sesi itu */
-  identitas: Map<string, { email: string; nama: string | null }>;
+  identitas: Map<string, { email: string; nama: string | null; meta: Record<string, string> }>;
+  /** respondenId -> jumlah kolom kosong. Tidak ada entri berarti lengkap. */
+  kurang: Map<string, number>;
+  /** respondenId -> peringatan yang muncul saat menilainya. */
+  peringatan: Map<string, string[]>;
 }
 
 export interface Pembanding {
@@ -17,10 +21,11 @@ export interface BarisGabungan {
   id: string;
   email: string;
   nama: string | null;
+  meta: Record<string, string>;
   /** sesiId -> nilai, atau null bila tidak ikut */
   nilaiPerSesi: Record<string, number | null>;
   /** sesiId -> penanda keikutsertaan */
-  statusPerSesi: Record<string, 'ikut' | 'tidak ikut'>;
+  statusPerSesi: Record<string, 'ikut' | 'tidak ikut' | `ikut:kurang ${number}`>;
   /** null bila pembanding tidak ditetapkan atau salah satu nilainya tidak ada */
   selisih: number | null;
   /** 'lengkap' atau 'sebagian:<nama sesi yang diikuti, dipisah koma>' */
@@ -81,18 +86,19 @@ export function gabungkanSesi(
 
   const baris = semuaId.map((id) => {
     const nilaiPerSesi: Record<string, number | null> = {};
-    const statusPerSesi: Record<string, 'ikut' | 'tidak ikut'> = {};
+    const statusPerSesi: Record<string, 'ikut' | 'tidak ikut' | `ikut:kurang ${number}`> = {};
     const sesiDiikuti: string[] = [];
 
     let email = '';
     let nama: string | null = null;
+    let meta: Record<string, string> = {};
     let identitasTerisi = false;
 
     for (const s of daftarSesi) {
       const ikut = s.nilai.has(id);
-      statusPerSesi[s.sesiId] = ikut ? 'ikut' : 'tidak ikut';
 
       if (!ikut) {
+        statusPerSesi[s.sesiId] = 'tidak ikut';
         nilaiPerSesi[s.sesiId] = null;
         continue;
       }
@@ -101,11 +107,16 @@ export function gabungkanSesi(
       const nilai = s.nilai.get(id);
       nilaiPerSesi[s.sesiId] = nilai === undefined ? null : nilai;
 
+      const jumlahKurang = s.kurang.get(id);
+      statusPerSesi[s.sesiId] =
+        jumlahKurang === undefined ? 'ikut' : `ikut:kurang ${jumlahKurang}`;
+
       if (!identitasTerisi) {
         const data = s.identitas.get(id);
         if (data !== undefined) {
           email = data.email;
           nama = data.nama;
+          meta = data.meta;
           identitasTerisi = true;
         }
       }
@@ -123,7 +134,7 @@ export function gabungkanSesi(
       }
     }
 
-    return { id, email, nama, nilaiPerSesi, statusPerSesi, selisih, statusGabungan };
+    return { id, email, nama, meta, nilaiPerSesi, statusPerSesi, selisih, statusGabungan };
   });
 
   return {

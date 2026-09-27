@@ -116,14 +116,18 @@ describe('penggabungan Pre-Test dan Post-Test', () => {
       namaSesi: 'Pre-Test',
       skemaId: skema.skemaId,
       nilai: new Map([[diPre.id, hitungNilaiResponden(diPre, skema).nilai]]),
-      identitas: new Map([[diPre.id, { email: diPre.email, nama: diPre.nama }]]),
+      identitas: new Map([[diPre.id, { email: diPre.email, nama: diPre.nama, meta: {} }]]),
+      kurang: new Map(),
+      peringatan: new Map(),
     };
     const post: NilaiSesi = {
       sesiId: 's2',
       namaSesi: 'Post-Test',
       skemaId: skema.skemaId,
       nilai: new Map([[diPost.id, hitungNilaiResponden(diPost, skema).nilai]]),
-      identitas: new Map([[diPost.id, { email: diPost.email, nama: diPost.nama }]]),
+      identitas: new Map([[diPost.id, { email: diPost.email, nama: diPost.nama, meta: {} }]]),
+      kurang: new Map(),
+      peringatan: new Map(),
     };
 
     const hasil = gabungkanSesi([pre, post], { awal: 's1', akhir: 's2' });
@@ -144,7 +148,9 @@ describe('penggabungan Pre-Test dan Post-Test', () => {
       namaSesi: 'Pre-Test',
       skemaId: skema.skemaId,
       nilai: new Map([[budi.id, 40]]),
-      identitas: new Map([[budi.id, { email: budi.email, nama: budi.nama }]]),
+      identitas: new Map([[budi.id, { email: budi.email, nama: budi.nama, meta: {} }]]),
+      kurang: new Map(),
+      peringatan: new Map(),
     };
     const post: NilaiSesi = {
       sesiId: 's2',
@@ -155,9 +161,11 @@ describe('penggabungan Pre-Test dan Post-Test', () => {
         [andi.id, 90],
       ]),
       identitas: new Map([
-        [budi.id, { email: budi.email, nama: budi.nama }],
-        [andi.id, { email: andi.email, nama: andi.nama }],
+        [budi.id, { email: budi.email, nama: budi.nama, meta: {} }],
+        [andi.id, { email: andi.email, nama: andi.nama, meta: {} }],
       ]),
+      kurang: new Map(),
+      peringatan: new Map(),
     };
 
     const hasil = gabungkanSesi([pre, post], { awal: 's1', akhir: 's2' });
