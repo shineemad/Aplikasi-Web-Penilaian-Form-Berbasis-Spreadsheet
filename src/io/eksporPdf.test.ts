@@ -88,18 +88,28 @@ describe('tulisPdf', () => {
     // Temuan 2: sebelumnya seluruh dokumen memakai satu orientasi agregat
     // (`some(...) === 'lanskap'`), sehingga tabel potret ikut tercetak di
     // halaman berbentuk lanskap. Di sini satu tabel lebar (-> lanskap) dan
-    // satu tabel sempit (-> potret) digabung dalam satu pemanggilan; bentuk
-    // halaman fisik yang sesungguhnya (bukan sekadar rencana) harus berbeda.
+    // satu tabel sempit (-> potret) digabung dalam satu pemanggilan.
+    //
+    // Urutannya dinyatakan persis, bukan lewat toContain: pemeriksaan
+    // "memuat lanskap dan memuat potret" tetap hijau seandainya tabel lebar
+    // yang tercetak potret dan tabel sempit yang lanskap.
+    //
+    // Turunan angkanya: tabelLebar(8) berisi 3 kolom identitas + 8 sesi x 2
+    // kolom + Selisih + Status = 21 kolom. Halaman lanskap memuat 10, tiga
+    // kolom identitas diulang di tiap potongan, jadi ruang datanya 7 untuk 18
+    // kolom data -> 3 potongan lanskap. Tabel sempit menyusul di 1 halaman potret.
     const lebar = tabelLebar(8);
     const sempit = tabelSempit(3);
-    const { orientasiPerTabel, bentukHalaman } = tulisPdf([lebar, sempit], KEPALA, {
-      kembalikanInfo: true,
-    });
+    const { orientasiPerTabel, jumlahPotonganPerTabel, bentukHalaman } = tulisPdf(
+      [lebar, sempit],
+      KEPALA,
+      { kembalikanInfo: true },
+    );
 
-    expect(orientasiPerTabel[0]).toBe('lanskap');
-    expect(orientasiPerTabel[1]).toBe('potret');
-    expect(bentukHalaman).toContain('lanskap');
-    expect(bentukHalaman).toContain('potret');
+    expect(lebar.kolom).toHaveLength(21);
+    expect(orientasiPerTabel).toEqual(['lanskap', 'potret']);
+    expect(jumlahPotonganPerTabel).toEqual([3, 1]);
+    expect(bentukHalaman).toEqual(['lanskap', 'lanskap', 'lanskap', 'potret']);
   });
 
   it('menulis beberapa tabel dalam satu berkas', () => {
