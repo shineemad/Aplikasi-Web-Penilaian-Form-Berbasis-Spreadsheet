@@ -8,7 +8,32 @@ export function bukuKerjaXlsx(data: string[][]): ArrayBuffer {
   return XLSX.write(buku, { type: 'array', bookType: 'xlsx' }) as ArrayBuffer;
 }
 
-const OPSI = ['Strongly disagree', 'Disagree', 'Neutral', 'Agree', 'Strongly Agree'];
+const TINGKAT = ['Strongly disagree', 'Disagree', 'Neutral', 'Agree', 'Strongly agree'] as const;
+export type Tingkat = (typeof TINGKAT)[number];
+
+/**
+ * Ragam penulisan tiap opsi seperti pada instrumen asli: "Strongly Agree" dan
+ * "Strongly agree" muncul bersamaan, begitu pula spasi ganda dan spasi tepi.
+ */
+const RAGAM: Record<Tingkat, [string, string, string]> = {
+  'Strongly disagree': ['Strongly disagree', 'Strongly Disagree', ' strongly  disagree '],
+  Disagree: ['Disagree', 'disagree', 'Disagree '],
+  Neutral: ['Neutral', 'NEUTRAL', ' neutral'],
+  Agree: ['Agree', 'agree', 'AGREE'],
+  'Strongly agree': ['Strongly Agree', 'Strongly agree', 'strongly  agree'],
+};
+
+/** Teks opsi untuk butir ke-n, dengan penulisan yang berganti-ganti antar butir. */
+function tulisOpsi(tingkat: Tingkat, n: number): string {
+  const teks = RAGAM[tingkat][n % 3];
+  return teks === undefined ? tingkat : teks;
+}
+
+function headerPostTest(): string[] {
+  const header = ['Email', 'Name', 'Age', 'Gender'];
+  for (let n = 1; n <= 20; n += 1) header.push(`q${n}`);
+  return header;
+}
 
 /**
  * Replika instrumen Post-Test: Email wajib, Name opsional, dua kolom meta,
@@ -16,10 +41,7 @@ const OPSI = ['Strongly disagree', 'Disagree', 'Neutral', 'Agree', 'Strongly Agr
  * seperti pada form aslinya.
  */
 export function bukuKerjaPostTest(jumlahBaris: number): ArrayBuffer {
-  const header = ['Email', 'Name', 'Age', 'Gender'];
-  for (let n = 1; n <= 20; n += 1) header.push(`q${n}`);
-
-  const data: string[][] = [header];
+  const data: string[][] = [headerPostTest()];
   for (let i = 0; i < jumlahBaris; i += 1) {
     const baris = [
       `peserta${i}@example.com`,
@@ -28,10 +50,43 @@ export function bukuKerjaPostTest(jumlahBaris: number): ArrayBuffer {
       i % 2 === 0 ? 'female' : 'male',
     ];
     for (let n = 1; n <= 20; n += 1) {
-      const pilihan = OPSI[(i + n) % OPSI.length];
-      baris.push(n === 11 && i % 3 === 0 ? 'Maybe' : pilihan === undefined ? 'Agree' : pilihan);
+      const tingkat = TINGKAT[(i + n) % TINGKAT.length];
+      baris.push(n === 11 && i % 3 === 0 ? 'Maybe' : tulisOpsi(tingkat === undefined ? 'Agree' : tingkat, n));
     }
     data.push(baris);
   }
   return bukuKerjaXlsx(data);
+}
+
+export interface PesertaFixture {
+  email: string;
+  nama: string;
+  /** Tingkat yang sama untuk seluruh 20 butir, supaya nilainya mudah dihitung tangan. */
+  tingkat: Tingkat;
+  /** Jawaban yang menggantikan tingkat pada butir tertentu, mis. { q11: 'Maybe' }. */
+  ganti?: Record<string, string>;
+}
+
+/**
+ * Satu sesi berisi peserta pilihan. `null` menjadi baris kosong, untuk menguji
+ * bahwa nomor baris asal tidak bergeser.
+ */
+export function bukuKerjaSesi(peserta: (PesertaFixture | null)[], format: 'xlsx' | 'csv'): ArrayBuffer {
+  const data: string[][] = [headerPostTest()];
+  for (const satu of peserta) {
+    if (satu === null) {
+      data.push([]);
+      continue;
+    }
+    const baris = [satu.email, satu.nama, '20', 'female'];
+    for (let n = 1; n <= 20; n += 1) {
+      const pengganti = satu.ganti?.[`q${n}`];
+      baris.push(pengganti === undefined ? tulisOpsi(satu.tingkat, n) : pengganti);
+    }
+    data.push(baris);
+  }
+
+  if (format === 'xlsx') return bukuKerjaXlsx(data);
+  const teks = data.map((baris) => baris.join(',')).join('\n') + '\n';
+  return new TextEncoder().encode(teks).buffer as ArrayBuffer;
 }
