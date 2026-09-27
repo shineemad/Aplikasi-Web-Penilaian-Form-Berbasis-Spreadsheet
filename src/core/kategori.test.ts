@@ -19,6 +19,18 @@ describe('kategoriIndeks dengan kategori bawaan', () => {
     expect(kategoriIndeks(60.9)).toBe('Cukup');
   });
 
+  it('memperlakukan angka yang hanya meleset karena galat pecahan sebagai berada di batas', () => {
+    // hitungNilaiResponden menghasilkan 60.999999999999986 untuk nilai yang
+    // secara matematis tepat 61. Tanpa toleransi, itu jatuh ke kategori di bawahnya.
+    expect(kategoriIndeks(60.999999999999986)).toBe('Baik');
+    expect(kategoriIndeks(80.99999999999999)).toBe('Sangat Baik');
+  });
+
+  it('tetap menolak angka yang benar-benar di bawah batas', () => {
+    expect(kategoriIndeks(60.9)).toBe('Cukup');
+    expect(kategoriIndeks(80.9)).toBe('Baik');
+  });
+
   it('memberi Sangat Kurang untuk batas bawah skala Likert', () => {
     // Seluruh butir dijawab minimum menghasilkan 20 persen, bukan 0 persen.
     expect(kategoriIndeks(20)).toBe('Sangat Kurang');

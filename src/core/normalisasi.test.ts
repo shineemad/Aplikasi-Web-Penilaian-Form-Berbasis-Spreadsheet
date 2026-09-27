@@ -1,10 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { idResponden, normalisasiEmail, normalisasiTeks } from './normalisasi';
-
-// Hash palsu yang deterministik: cukup untuk menguji perilaku idResponden
-// tanpa menyeret ketergantungan kriptografi ke dalam core.
-const hashPalsu = (teks: string): string =>
-  [...teks].map((huruf) => huruf.charCodeAt(0).toString(16)).join('').padEnd(64, '0');
+import { hashPalsu } from './__fixtures__/hash';
 
 describe('normalisasiTeks', () => {
   it('menyamakan huruf besar-kecil', () => {

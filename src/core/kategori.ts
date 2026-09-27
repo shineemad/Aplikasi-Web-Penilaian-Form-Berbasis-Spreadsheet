@@ -12,6 +12,9 @@ export const KATEGORI_BAWAAN: Kategori[] = [
   { batasBawah: 0, nama: 'Sangat Kurang' },
 ];
 
+/** Menyerap galat pecahan IEEE-754 agar nilai yang tepat di batas tidak jatuh ke kategori di bawahnya. */
+const TOLERANSI = 1e-9;
+
 export function kategoriIndeks(
   indeks: number | null,
   kategori: Kategori[] = KATEGORI_BAWAAN,
@@ -20,7 +23,7 @@ export function kategoriIndeks(
 
   const menurun = [...kategori].sort((a, b) => b.batasBawah - a.batasBawah);
   for (const satuan of menurun) {
-    if (indeks >= satuan.batasBawah) return satuan.nama;
+    if (indeks >= satuan.batasBawah - TOLERANSI) return satuan.nama;
   }
   return null;
 }

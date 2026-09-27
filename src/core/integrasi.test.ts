@@ -8,10 +8,8 @@ import { gabungkanSesi, ringkasProyek } from './merger';
 import type { NilaiSesi } from './merger';
 import { idResponden } from './normalisasi';
 import { jawabanSeragam, skemaPostTest } from './__fixtures__/postTest';
+import { hashPalsu } from './__fixtures__/hash';
 import type { JawabanResponden } from './tipe';
-
-const hashPalsu = (teks: string): string =>
-  [...teks].map((huruf) => huruf.charCodeAt(0).toString(16)).join('').padEnd(64, '0');
 
 function buatResponden(email: string, nama: string | null, jawaban: Record<string, string>): JawabanResponden {
   return { id: idResponden(email, hashPalsu), email, nama, jawaban };
@@ -92,6 +90,9 @@ describe('instrumen Post-Test nyata', () => {
         buatResponden(`peserta${i}@example.com`, i % 7 === 0 ? null : `Peserta ${i}`, jawabanSeragam(pilihan === undefined ? 'Agree' : pilihan)),
       );
     }
+
+    const idUnik = new Set(semua.map((r) => r.id));
+    expect(idUnik.size).toBe(500);
 
     const nilai = semua.map((r) => hitungNilaiResponden(r, skema));
     expect(nilai).toHaveLength(500);

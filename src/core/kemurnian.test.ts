@@ -4,6 +4,11 @@ import { describe, expect, it } from 'vitest';
 
 const DIR_CORE = path.resolve(process.cwd(), 'src/core');
 
+function diDalamCore(berkas: string, spesifier: string): boolean {
+  if (!spesifier.startsWith('.')) return false;
+  return path.resolve(path.dirname(berkas), spesifier).startsWith(DIR_CORE);
+}
+
 function berkasSumber(dir: string): string[] {
   const hasil: string[] = [];
   for (const entri of readdirSync(dir)) {
@@ -56,7 +61,7 @@ describe('kemurnian src/core', () => {
         for (const cocok of isi.matchAll(pola)) {
           const spesifier = cocok[1];
           expect(
-            spesifier?.startsWith('.'),
+            spesifier !== undefined && diDalamCore(berkas, spesifier),
             `${path.relative(process.cwd(), berkas)} mengimpor "${spesifier}" dari luar core`,
           ).toBe(true);
         }
@@ -112,5 +117,13 @@ describe('pola penjaga itu sendiri', () => {
   it('menangkap spesifier dari impor efek samping dan impor dinamis', () => {
     expect(spesifierDari("import 'efek-samping';")).toContain('efek-samping');
     expect(spesifierDari("const m = await import('date-fns');")).toContain('date-fns');
+  });
+
+  it('menolak impor relatif yang keluar dari core', () => {
+    const berkas = path.join(DIR_CORE, 'scorer.ts');
+    expect(diDalamCore(berkas, './tipe')).toBe(true);
+    expect(diDalamCore(berkas, './__fixtures__/postTest')).toBe(true);
+    expect(diDalamCore(berkas, '../io/store')).toBe(false);
+    expect(diDalamCore(berkas, 'vitest')).toBe(false);
   });
 });

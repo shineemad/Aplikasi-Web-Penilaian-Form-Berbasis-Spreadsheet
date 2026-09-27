@@ -51,6 +51,14 @@ describe('skorJawaban dengan peta-opsi', () => {
   it('tidak pernah mengembalikan skor 0 untuk opsi tak dikenal', () => {
     expect(skorJawaban('Maybe', LIKERT)).not.toEqual({ status: 'terhitung', skor: 0 });
   });
+
+  it('memangkas spasi tepi pada opsi tak dikenal yang dilaporkan', () => {
+    const hasil = skorJawaban('  Maybe  ', LIKERT);
+    expect(hasil.status).toBe('peringatan');
+    if (hasil.status === 'peringatan') {
+      expect(hasil.opsiTakDikenal).toBe('Maybe');
+    }
+  });
 });
 
 describe('skorJawaban dengan jawaban kosong', () => {

@@ -31,6 +31,12 @@ export function hitungNilaiResponden(
   for (const butir of skema.butir) {
     const skorMaks = skorMaksAturan(butir.aturan);
     if (skorMaks === null) continue;
+    if (!Number.isFinite(skorMaks) || skorMaks <= 0) {
+      peringatan.push(
+        `${butir.label}: skor maksimum tidak sah (${skorMaks}), butir ini dikeluarkan dari perhitungan.`,
+      );
+      continue;
+    }
 
     const hasil = skorJawaban(responden.jawaban[butir.kolomAsal], butir.aturan);
 
@@ -72,6 +78,7 @@ export function hitungIndeksDimensi(
   for (const butir of skema.butir) {
     const skorMaks = skorMaksAturan(butir.aturan);
     if (skorMaks === null) continue;
+    if (!Number.isFinite(skorMaks) || skorMaks <= 0) continue;
     if (butir.aturan.jenis === 'manual') continue;
 
     if (!akumulasi.has(butir.dimensi)) {

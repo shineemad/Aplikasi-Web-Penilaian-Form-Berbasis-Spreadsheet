@@ -55,7 +55,16 @@ export function gabungkanSesi(
   if (pembanding !== undefined) {
     const awal = daftarSesi.find((s) => s.sesiId === pembanding.awal);
     const akhir = daftarSesi.find((s) => s.sesiId === pembanding.akhir);
-    if (awal !== undefined && akhir !== undefined && awal.skemaId !== akhir.skemaId) {
+
+    if (awal === undefined || akhir === undefined) {
+      peringatan.push(
+        'Pasangan pembanding menunjuk sesi yang tidak ada di proyek ini. Kolom selisih tidak akan terisi.',
+      );
+    } else if (pembanding.awal === pembanding.akhir) {
+      peringatan.push(
+        'Pasangan pembanding menunjuk sesi yang sama, sehingga seluruh selisih bernilai nol. Angka nol di sini bukan tanda tidak ada perubahan.',
+      );
+    } else if (awal.skemaId !== akhir.skemaId) {
       peringatan.push(
         `Sesi "${awal.namaSesi}" dan "${akhir.namaSesi}" memakai skema berbeda. ` +
           'Selisihnya tetap bisa dihitung, tetapi belum tentu bermakna. Periksa sebelum mengekspor.',

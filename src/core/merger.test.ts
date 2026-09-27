@@ -91,6 +91,31 @@ describe('gabungkanSesi', () => {
     expect(peringatan).toHaveLength(0);
   });
 
+  it('memperingatkan bila pembanding menunjuk sesi yang tidak ada', () => {
+    const { peringatan } = gabungkanSesi([PRE, POST], { awal: 's1', akhir: 's9' });
+    expect(peringatan).toHaveLength(1);
+    expect(peringatan.join(' ')).toContain('tidak ada di proyek ini');
+  });
+
+  it('memperingatkan bila kedua pembanding menunjuk sesi yang sama', () => {
+    const { peringatan } = gabungkanSesi([PRE, POST], { awal: 's1', akhir: 's1' });
+    expect(peringatan).toHaveLength(1);
+    expect(peringatan.join(' ')).toContain('bukan tanda tidak ada perubahan');
+  });
+
+  it('memperlakukan responden yang hadir tetapi nilainya null sebagai ikut', () => {
+    const preNull = sesi('s1', 'Pre-Test', 'skemaA', {
+      budi: { nilai: null, email: 'budi@example.com', nama: 'Budi' },
+    });
+    const postBudi = sesi('s2', 'Post-Test', 'skemaA', {
+      budi: { nilai: 80, email: 'budi@example.com', nama: 'Budi' },
+    });
+    const { baris } = gabungkanSesi([preNull, postBudi], PEMBANDING);
+    expect(baris[0]?.statusPerSesi['s1']).toBe('ikut');
+    expect(baris[0]?.statusGabungan).toBe('lengkap');
+    expect(baris[0]?.selisih).toBe(null);
+  });
+
   it('mempertahankan urutan sesi pada kolom', () => {
     const TENGAH = sesi('s3', 'Tes Tengah', 'skemaA', {
       budi: { nilai: 60, email: 'budi@example.com', nama: 'Budi' },

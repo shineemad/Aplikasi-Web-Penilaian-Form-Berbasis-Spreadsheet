@@ -111,6 +111,9 @@ describe('hitungNilaiResponden', () => {
     const nilaiBesar = hitungNilaiResponden(responden('a', jawaban), besar).nilai;
     expect(nilaiKecil).not.toBe(null);
     expect(Number(nilaiKecil)).toBeCloseTo(Number(nilaiBesar), 10);
+    // 0,2x0,8 + 0,3x0,6 + 0,5x1 = 0,84. Tanpa bobot hasilnya 80, jadi uji ini
+    // menangkap implementasi yang mengabaikan bobot.
+    expect(Number(nilaiKecil)).toBeCloseTo(84, 10);
   });
 
   it('mengabaikan kolom yang aturannya abaikan', () => {
