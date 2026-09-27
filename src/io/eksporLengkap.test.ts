@@ -242,15 +242,38 @@ describe('ekspor dari berkas nyata', () => {
   });
 
   it('tidak memuat email maupun nama pada mode anonim', () => {
-    // Kriteria penerimaan 13 butir 6.
+    // Kriteria penerimaan 13 butir 6, pada kedua berkas ekspor. Sebelumnya
+    // hanya berkas Excel yang dibaca, sehingga kebocoran di PDF — termasuk
+    // yang masuk lewat kepala laporan atau catatan kaki — tidak tertangkap.
     const { gabungan } = siapkan(30);
     const tabel = bangunTabelGabungan(gabungan, { ...OPSI, anonim: true });
+
+    // Nama diambil dari data uji itu sendiri. Memeriksa string tetap seperti
+    // 'Peserta' membuat uji ini lulus hanya karena pola fixture kebetulan
+    // begitu, dan diam-diam berhenti menguji apa pun bila fixture berubah.
+    const nama = gabungan.baris
+      .map((baris) => baris.nama)
+      .filter((satu): satu is string => satu !== null && satu !== '');
+    expect(nama.length).toBeGreaterThan(0);
+    const kumpulanNama = new Set(nama);
+
     const matriks = bacaLembar(tulisExcel([tabel]), tabel.judul);
     const seluruhTeks = matriks.map((baris) => baris.join(' ')).join(' ');
 
     expect(seluruhTeks).not.toContain('@');
-    expect(seluruhTeks).not.toContain('Peserta');
+    for (const satu of nama) expect(seluruhTeks).not.toContain(satu);
     expect(matriks[0]).toContain('ID');
+    expect(matriks[0]).not.toContain('Email');
+    expect(matriks[0]).not.toContain('Nama');
+
+    const token = tokenTeksPdf(
+      tulisPdf([tabel], { ...KEPALA, jumlahResponden: gabungan.baris.length }),
+    );
+    expect(token.filter((satu) => satu.includes('@'))).toEqual([]);
+    expect(token.filter((satu) => kumpulanNama.has(satu))).toEqual([]);
+    expect(token).toContain('ID');
+    expect(token).not.toContain('Email');
+    expect(token).not.toContain('Nama');
   });
 
   it('mempertahankan tanda kosong sampai ke berkas', () => {
