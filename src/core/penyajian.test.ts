@@ -25,6 +25,29 @@ describe('formatAngka', () => {
     expect(formatAngka(80.95, { desimal: 1 })).toBe('81,0');
   });
 
+  it('membulatkan setengah menjauhi nol, bukan ke arah plus tak hingga', () => {
+    // Math.round membulatkan seri selalu ke atas, sehingga -6,25 menjadi -6,2.
+    // Excel memberi ROUND(-6,25;1) = -6,3. Angka -6,25 bukan contoh buatan:
+    // itu selisih nyata pada tes 16 soal, 8 benar di Pre-Test dan 7 di Post-Test.
+    expect(formatAngka(-6.25, { desimal: 1 })).toBe('-6,3');
+    expect(formatAngka(6.25, { desimal: 1 })).toBe('6,3');
+    expect(formatAngka(-1.25, { desimal: 1 })).toBe('-1,3');
+    expect(formatAngka(-3.75, { desimal: 1 })).toBe('-3,8');
+  });
+
+  it('tidak mencetak minus di depan nol', () => {
+    // -0,04 dibulatkan menjadi -0 di dalam, tetapi pembaca laporan tidak pernah
+    // boleh melihat "-0,0": minus di situ menyiratkan penurunan yang tidak ada.
+    expect(formatAngka(-0.04, { desimal: 1 })).toBe('0,0');
+    expect(formatAngka(-0.04, { desimal: 1 })).not.toBe('-0,0');
+  });
+
+  it('tetap mencetak minus bila pembulatan benar-benar menjauhi nol', () => {
+    // Berpasangan dengan uji di atas: jaga minus-nol tidak boleh berubah
+    // menjadi membuang minus pada angka negatif yang sesungguhnya kecil.
+    expect(formatAngka(-0.05, { desimal: 1 })).toBe('-0,1');
+  });
+
   it('menampilkan bilangan bulat tanpa desimal bila diminta nol desimal', () => {
     expect(formatAngka(80.6, { desimal: 0 })).toBe('81');
   });

@@ -11,7 +11,12 @@ export interface OpsiAngka {
 
 function bulatkan(nilai: number, desimal: number): number {
   const faktor = 10 ** desimal;
-  return Math.round(nilai * faktor) / faktor;
+  // Simetris terhadap nol, bukan Math.round biasa. Math.round membulatkan seri
+  // ke arah +∞, sehingga selisih -6,25 tercetak "-6,2" sementara Excel
+  // ROUND(-6,25;1) memberi -6,3 — dua angka berbeda untuk data yang sama.
+  // Minus-nol tidak perlu dijaga di sini: toFixed mencetak -0 sebagai "0,0",
+  // dan kategoriIndeks membandingkan -0 sama dengan 0.
+  return (Math.sign(nilai) * Math.round(Math.abs(nilai) * faktor)) / faktor;
 }
 
 export function formatAngka(nilai: number | null, opsi: OpsiAngka): string {

@@ -89,6 +89,19 @@ describe('bangunTabelGabungan', () => {
     expect(tabel.baris[0]?.[2]).toBe(TANDA_KOSONG);
   });
 
+  it('menampilkan selisih negatif dengan pembulatan yang menjauhi nol', () => {
+    // Peserta yang turun nilainya: tes 16 soal, 8 benar lalu 7 benar.
+    // Selisihnya -6,25 persen dan harus tercetak -6,3 seperti di Excel,
+    // bukan -6,2 seperti yang dihasilkan Math.round biasa.
+    const tabel = bangunTabelGabungan(
+      hasil([baris({ nilaiPerSesi: { s1: 50, s2: 43.75 }, selisih: -6.25 })]),
+      OPSI,
+    );
+    expect(tabel.baris[0]?.[4]).toBe('50,0');
+    expect(tabel.baris[0]?.[6]).toBe('43,8');
+    expect(tabel.baris[0]?.[8]).toBe('-6,3');
+  });
+
   it('membuang kolom email dan nama pada mode anonim', () => {
     // Kolom yang ada tetapi kosong tetap membocorkan bahwa kolom itu pernah ada.
     const tabel = bangunTabelGabungan(hasil([baris({})]), { ...OPSI, anonim: true });
