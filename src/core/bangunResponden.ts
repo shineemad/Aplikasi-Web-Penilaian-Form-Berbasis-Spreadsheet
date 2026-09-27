@@ -20,6 +20,12 @@ export function bangunResponden(
   skema: Skema,
   hash: FungsiHash,
 ): HasilPemetaan {
+  if (baris.length !== nomorBaris.length) {
+    throw new Error(
+      `baris (${baris.length} baris) dan nomorBaris (${nomorBaris.length} baris) harus sama panjang: keduanya larik sejajar, panjang yang berbeda berarti pemanggil salah memasangkannya.`,
+    );
+  }
+
   let kolomEmail: string | undefined;
   let kolomNama: string | undefined;
   let kolomWaktu: string | undefined;
@@ -49,6 +55,8 @@ export function bangunResponden(
     const email = normalisasiEmail(emailMentah === undefined ? '' : emailMentah);
 
     if (email === '') {
+      // nomorBaris[i] tidak pernah undefined di sini karena panjang keduanya
+      // sudah diperiksa sama di atas; pagar ini hanya untuk noUncheckedIndexedAccess.
       const nomor = nomorBaris[i];
       if (nomor !== undefined) barisTanpaEmail.push(nomor);
     }

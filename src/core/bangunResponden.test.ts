@@ -133,6 +133,10 @@ describe('bangunResponden tidak menyembunyikan baris bermasalah', () => {
       hashPalsu,
     );
     expect(hasil.barisTanpaEmail).toEqual([3, 4]);
+    // Baris kedua dan ketiga menghasilkan idResponden yang SAMA (hash teks kosong
+    // konstan), tetapi keduanya tetap harus muncul sebagai dua orang terpisah —
+    // bukan memadat menjadi satu, persis cacat historis yang fungsi ini cegah.
+    expect(hasil.responden).toHaveLength(3);
   });
 
   it('tetap mengembalikan baris beremail kosong, tidak membuangnya', () => {
@@ -159,5 +163,13 @@ describe('bangunResponden tidak menyembunyikan baris bermasalah', () => {
     expect(hasil.responden).toHaveLength(0);
     expect(hasil.barisTanpaEmail).toHaveLength(0);
     expect(hasil.tanpaKolomEmail).toBe(false);
+  });
+
+  it('menolak bila panjang baris dan nomorBaris tidak sama', () => {
+    // baris dan nomorBaris adalah larik sejajar (kontrak pemanggil); bila
+    // panjangnya berbeda, penanda baris-tanpa-email bisa hilang diam-diam.
+    expect(() =>
+      bangunResponden(baris([{ 'Email Address': 'a@x.com', q1: 'Agree' }]), [2, 3], peran(HEADER), SKEMA, hashPalsu),
+    ).toThrow('baris (1 baris) dan nomorBaris (2 baris) harus sama panjang');
   });
 });
