@@ -1,7 +1,7 @@
-import { tebakPeranKolom } from './peranKolom';
-import type { PeranIdentitas, PetaPeran } from './peranKolom';
-import { usulkanAturan } from './usulAturan';
-import type { Aturan, ButirSkema, PerlakuanKosong, Skema } from './tipe';
+import { tebakPeranKolom } from "./peranKolom";
+import type { PeranIdentitas, PetaPeran } from "./peranKolom";
+import { usulkanAturan } from "./usulAturan";
+import type { Aturan, ButirSkema, PerlakuanKosong, Skema } from "./tipe";
 
 export interface ButirRancangan {
   kolomAsal: string;
@@ -25,20 +25,20 @@ export interface RancanganSkema {
 }
 
 export type MasalahRancangan =
-  | { jenis: 'tanpa-kolom-email' }
-  | { jenis: 'peran-rancu'; peran: string; calon: string[] }
-  | { jenis: 'peran-ganda'; peran: PeranIdentitas; header: string[] }
-  | { jenis: 'pertanyaan-tanpa-butir'; header: string }
-  | { jenis: 'peran-belum-diputuskan'; header: string }
-  | { jenis: 'aturan-belum-diputuskan'; kolomAsal: string }
-  | { jenis: 'dimensi-kosong'; kolomAsal: string }
-  | { jenis: 'perlakuan-kosong-belum-dipilih' };
+  | { jenis: "tanpa-kolom-email" }
+  | { jenis: "peran-rancu"; peran: string; calon: string[] }
+  | { jenis: "peran-ganda"; peran: PeranIdentitas; header: string[] }
+  | { jenis: "pertanyaan-tanpa-butir"; header: string }
+  | { jenis: "peran-belum-diputuskan"; header: string }
+  | { jenis: "aturan-belum-diputuskan"; kolomAsal: string }
+  | { jenis: "dimensi-kosong"; kolomAsal: string }
+  | { jenis: "perlakuan-kosong-belum-dipilih" };
 
 export type HasilFinalisasi =
-  | { status: 'siap'; skema: Skema }
-  | { status: 'belum-lengkap'; masalah: MasalahRancangan[] };
+  | { status: "siap"; skema: Skema }
+  | { status: "belum-lengkap"; masalah: MasalahRancangan[] };
 
-const PERAN_IDENTITAS: PeranIdentitas[] = ['email', 'nama', 'waktu'];
+const PERAN_IDENTITAS: PeranIdentitas[] = ["email", "nama", "waktu"];
 
 export function bangunRancangan(
   skemaId: string,
@@ -49,7 +49,12 @@ export function bangunRancangan(
   const butir: ButirRancangan[] = [];
 
   for (const kolom of peran.kolom) {
-    if (kolom.peran === 'email' || kolom.peran === 'nama' || kolom.peran === 'waktu') continue;
+    if (
+      kolom.peran === "email" ||
+      kolom.peran === "nama" ||
+      kolom.peran === "waktu"
+    )
+      continue;
 
     const nilai: string[] = [];
     for (const satu of baris) {
@@ -59,12 +64,12 @@ export function bangunRancangan(
 
     const usul = usulkanAturan(nilai);
 
-    if (usul.status === 'usul') {
-      kolom.peran = 'pertanyaan';
+    if (usul.status === "usul") {
+      kolom.peran = "pertanyaan";
       butir.push({
         kolomAsal: kolom.header,
         label: kolom.header,
-        dimensi: '',
+        dimensi: "",
         aturan: usul.aturan,
         bobot: 1,
         alasan: usul.alasan,
@@ -76,7 +81,7 @@ export function bangunRancangan(
     butir.push({
       kolomAsal: kolom.header,
       label: kolom.header,
-      dimensi: '',
+      dimensi: "",
       aturan: null,
       bobot: 1,
       alasan: usul.alasan,
@@ -91,25 +96,39 @@ export function finalkanSkema(rancangan: RancanganSkema): HasilFinalisasi {
   const masalah: MasalahRancangan[] = [];
 
   for (const rancu of rancangan.peran.rancu) {
-    masalah.push({ jenis: 'peran-rancu', peran: rancu.peran, calon: rancu.calon });
+    masalah.push({
+      jenis: "peran-rancu",
+      peran: rancu.peran,
+      calon: rancu.calon,
+    });
   }
 
   let adaEmail = false;
   const peranPerHeader = new Map<string, string>();
-  const headerPerIdentitas: Record<PeranIdentitas, string[]> = { email: [], nama: [], waktu: [] };
-  const headerBerbutir = new Set(rancangan.butir.map((butir) => butir.kolomAsal));
+  const headerPerIdentitas: Record<PeranIdentitas, string[]> = {
+    email: [],
+    nama: [],
+    waktu: [],
+  };
+  const headerBerbutir = new Set(
+    rancangan.butir.map((butir) => butir.kolomAsal),
+  );
 
   for (const kolom of rancangan.peran.kolom) {
     peranPerHeader.set(kolom.header, kolom.peran);
-    if (kolom.peran === 'email') adaEmail = true;
-    if (kolom.peran === 'email' || kolom.peran === 'nama' || kolom.peran === 'waktu') {
+    if (kolom.peran === "email") adaEmail = true;
+    if (
+      kolom.peran === "email" ||
+      kolom.peran === "nama" ||
+      kolom.peran === "waktu"
+    ) {
       headerPerIdentitas[kolom.peran].push(kolom.header);
     }
-    if (kolom.peran === 'belum-diputuskan') {
-      masalah.push({ jenis: 'peran-belum-diputuskan', header: kolom.header });
+    if (kolom.peran === "belum-diputuskan") {
+      masalah.push({ jenis: "peran-belum-diputuskan", header: kolom.header });
     }
-    if (kolom.peran === 'pertanyaan' && !headerBerbutir.has(kolom.header)) {
-      masalah.push({ jenis: 'pertanyaan-tanpa-butir', header: kolom.header });
+    if (kolom.peran === "pertanyaan" && !headerBerbutir.has(kolom.header)) {
+      masalah.push({ jenis: "pertanyaan-tanpa-butir", header: kolom.header });
     }
   }
 
@@ -117,25 +136,29 @@ export function finalkanSkema(rancangan: RancanganSkema): HasilFinalisasi {
   // bangunResponden diam-diam memakai kolom terakhir bila ada dua.
   for (const peran of PERAN_IDENTITAS) {
     const header = headerPerIdentitas[peran];
-    if (header.length > 1) masalah.push({ jenis: 'peran-ganda', peran, header });
+    if (header.length > 1)
+      masalah.push({ jenis: "peran-ganda", peran, header });
   }
 
-  if (!adaEmail) masalah.push({ jenis: 'tanpa-kolom-email' });
+  if (!adaEmail) masalah.push({ jenis: "tanpa-kolom-email" });
   if (rancangan.perlakuanKosong === null) {
-    masalah.push({ jenis: 'perlakuan-kosong-belum-dipilih' });
+    masalah.push({ jenis: "perlakuan-kosong-belum-dipilih" });
   }
 
   const butirSkema: ButirSkema[] = [];
 
   for (const butir of rancangan.butir) {
-    if (peranPerHeader.get(butir.kolomAsal) !== 'pertanyaan') continue;
+    if (peranPerHeader.get(butir.kolomAsal) !== "pertanyaan") continue;
 
     if (butir.aturan === null) {
-      masalah.push({ jenis: 'aturan-belum-diputuskan', kolomAsal: butir.kolomAsal });
+      masalah.push({
+        jenis: "aturan-belum-diputuskan",
+        kolomAsal: butir.kolomAsal,
+      });
       continue;
     }
-    if (butir.dimensi === '') {
-      masalah.push({ jenis: 'dimensi-kosong', kolomAsal: butir.kolomAsal });
+    if (butir.dimensi === "") {
+      masalah.push({ jenis: "dimensi-kosong", kolomAsal: butir.kolomAsal });
       continue;
     }
 
@@ -148,16 +171,19 @@ export function finalkanSkema(rancangan: RancanganSkema): HasilFinalisasi {
     });
   }
 
-  if (masalah.length > 0) return { status: 'belum-lengkap', masalah };
+  if (masalah.length > 0) return { status: "belum-lengkap", masalah };
 
   const perlakuanKosong = rancangan.perlakuanKosong;
   // Terlihat berlebihan tetapi bukan: TypeScript tidak menyempitkan tipe dari cabang masalah.push di atas.
   if (perlakuanKosong === null) {
-    return { status: 'belum-lengkap', masalah: [{ jenis: 'perlakuan-kosong-belum-dipilih' }] };
+    return {
+      status: "belum-lengkap",
+      masalah: [{ jenis: "perlakuan-kosong-belum-dipilih" }],
+    };
   }
 
   return {
-    status: 'siap',
+    status: "siap",
     skema: { skemaId: rancangan.skemaId, perlakuanKosong, butir: butirSkema },
   };
 }

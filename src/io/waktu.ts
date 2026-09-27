@@ -1,10 +1,10 @@
-import type { BandingWaktu } from '../core/peringkat';
+import type { BandingWaktu } from "../core/peringkat";
 
-export type FormatTanggal = 'DMY' | 'MDY';
+export type FormatTanggal = "DMY" | "MDY";
 
 export type HasilTebakFormat =
-  | { status: 'yakin'; format: FormatTanggal; alasan: string }
-  | { status: 'rancu'; alasan: string };
+  | { status: "yakin"; format: FormatTanggal; alasan: string }
+  | { status: "rancu"; alasan: string };
 
 interface Bagian {
   pertama: number;
@@ -16,7 +16,8 @@ interface Bagian {
 }
 
 // Berjangkar di kedua ujung: sisa seperti " PM" yang diabaikan akan membaca 21:00 sebagai 09:00.
-const POLA = /^(\d{1,2})[/-](\d{1,2})[/-](\d{4})[ ,]+(\d{1,2}):(\d{2})(?::(\d{2}))?$/;
+const POLA =
+  /^(\d{1,2})[/-](\d{1,2})[/-](\d{4})[ ,]+(\d{1,2}):(\d{2})(?::(\d{2}))?$/;
 
 function uraikan(capWaktu: string): Bagian | null {
   const cocok = POLA.exec(capWaktu.trim());
@@ -44,8 +45,8 @@ function uraikan(capWaktu: string): Bagian | null {
 }
 
 const PETUNJUK =
-  'Pilih sendiri format tanggalnya pada layar pemetaan. ' +
-  'Salah memilih akan mengubah urutan peringkat tanpa pesan error apa pun.';
+  "Pilih sendiri format tanggalnya pada layar pemetaan. " +
+  "Salah memilih akan mengubah urutan peringkat tanpa pesan error apa pun.";
 
 export function tebakFormatTanggal(capWaktu: string[]): HasilTebakFormat {
   let buktiDMY = false;
@@ -63,45 +64,47 @@ export function tebakFormatTanggal(capWaktu: string[]): HasilTebakFormat {
 
   if (!adaTerbaca) {
     return {
-      status: 'rancu',
+      status: "rancu",
       alasan:
-        'Tidak ada satu pun isi kolom ini yang terbaca sebagai cap waktu ' +
-        '(bentuk yang dikenali: 25/4/2026 08:00:00, tanpa AM/PM), jadi memilih format ' +
-        'tanggal tidak akan menolong. Periksa apakah kolom ini memang kolom cap waktu; ' +
-        'bila bukan, ubah perannya. Selama belum terbaca, seri peringkat tidak dipecah ' +
-        'berdasarkan waktu kirim.',
+        "Tidak ada satu pun isi kolom ini yang terbaca sebagai cap waktu " +
+        "(bentuk yang dikenali: 25/4/2026 08:00:00, tanpa AM/PM), jadi memilih format " +
+        "tanggal tidak akan menolong. Periksa apakah kolom ini memang kolom cap waktu; " +
+        "bila bukan, ubah perannya. Selama belum terbaca, seri peringkat tidak dipecah " +
+        "berdasarkan waktu kirim.",
     };
   }
 
   if (buktiDMY && buktiMDY) {
     return {
-      status: 'rancu',
+      status: "rancu",
       alasan:
-        'Kolom cap waktu memuat baris yang hanya masuk akal sebagai hari/bulan ' +
+        "Kolom cap waktu memuat baris yang hanya masuk akal sebagai hari/bulan " +
         `dan baris lain yang hanya masuk akal sebagai bulan/hari. ${PETUNJUK}`,
     };
   }
 
   if (buktiDMY) {
     return {
-      status: 'yakin',
-      format: 'DMY',
-      alasan: 'Ada baris yang komponen pertamanya di atas 12, jadi urutannya hari/bulan/tahun.',
+      status: "yakin",
+      format: "DMY",
+      alasan:
+        "Ada baris yang komponen pertamanya di atas 12, jadi urutannya hari/bulan/tahun.",
     };
   }
 
   if (buktiMDY) {
     return {
-      status: 'yakin',
-      format: 'MDY',
-      alasan: 'Ada baris yang komponen keduanya di atas 12, jadi urutannya bulan/hari/tahun.',
+      status: "yakin",
+      format: "MDY",
+      alasan:
+        "Ada baris yang komponen keduanya di atas 12, jadi urutannya bulan/hari/tahun.",
     };
   }
 
   return {
-    status: 'rancu',
+    status: "rancu",
     alasan:
-      'Seluruh tanggal pada kolom ini bernilai 12 ke bawah, sehingga hari dan bulan ' +
+      "Seluruh tanggal pada kolom ini bernilai 12 ke bawah, sehingga hari dan bulan " +
       `tidak dapat dibedakan. ${PETUNJUK}`,
   };
 }
@@ -113,8 +116,8 @@ function kunciUrut(capWaktu: string, format: FormatTanggal): number {
   const bagian = uraikan(capWaktu);
   if (bagian === null) return KUNCI_TAK_TERBACA;
 
-  const hari = format === 'DMY' ? bagian.pertama : bagian.kedua;
-  const bulan = format === 'DMY' ? bagian.kedua : bagian.pertama;
+  const hari = format === "DMY" ? bagian.pertama : bagian.kedua;
+  const bulan = format === "DMY" ? bagian.kedua : bagian.pertama;
 
   return (
     bagian.tahun * 10000000000 +

@@ -1,34 +1,34 @@
-import { describe, expect, it } from 'vitest';
-import { hitungNilaiResponden } from '../core/aggregator';
-import { bangunResponden } from '../core/bangunResponden';
-import { hashPalsu } from '../core/__fixtures__/hash';
-import { urutkanPeringkat } from '../core/peringkat';
-import { bangunRancangan, finalkanSkema } from '../core/rancanganSkema';
-import type { RancanganSkema } from '../core/rancanganSkema';
-import { bangunNilaiSesi } from '../core/sesi';
-import { bacaBerkas } from './importerBerkas';
-import { bukuKerjaPostTest, bukuKerjaSesi } from './__fixtures__/bukuKerja';
-import type { PesertaFixture } from './__fixtures__/bukuKerja';
-import { buatBandingWaktu, tebakFormatTanggal } from './waktu';
+import { describe, expect, it } from "vitest";
+import { hitungNilaiResponden } from "../core/aggregator";
+import { bangunResponden } from "../core/bangunResponden";
+import { hashPalsu } from "../core/__fixtures__/hash";
+import { urutkanPeringkat } from "../core/peringkat";
+import { bangunRancangan, finalkanSkema } from "../core/rancanganSkema";
+import type { RancanganSkema } from "../core/rancanganSkema";
+import { bangunNilaiSesi } from "../core/sesi";
+import { bacaBerkas } from "./importerBerkas";
+import { bukuKerjaPostTest, bukuKerjaSesi } from "./__fixtures__/bukuKerja";
+import type { PesertaFixture } from "./__fixtures__/bukuKerja";
+import { buatBandingWaktu, tebakFormatTanggal } from "./waktu";
 
 function imporPostTest(jumlahBaris: number) {
-  const impor = bacaBerkas(bukuKerjaPostTest(jumlahBaris), 'post-test.xlsx');
-  if (impor.status !== 'berhasil') throw new Error('impor seharusnya berhasil');
+  const impor = bacaBerkas(bukuKerjaPostTest(jumlahBaris), "post-test.xlsx");
+  if (impor.status !== "berhasil") throw new Error("impor seharusnya berhasil");
   return impor;
 }
 
 /** Mewakili keputusan admin pada layar pemetaan. */
 function putuskanSemuanya(rancangan: RancanganSkema): RancanganSkema {
-  rancangan.perlakuanKosong = 'abaikan';
+  rancangan.perlakuanKosong = "abaikan";
 
   for (const kolom of rancangan.peran.kolom) {
-    if (kolom.peran !== 'belum-diputuskan') continue;
-    kolom.peran = kolom.header.startsWith('q') ? 'pertanyaan' : 'meta';
+    if (kolom.peran !== "belum-diputuskan") continue;
+    kolom.peran = kolom.header.startsWith("q") ? "pertanyaan" : "meta";
   }
 
   for (const butir of rancangan.butir) {
-    butir.dimensi = 'kemudahan';
-    if (butir.aturan === null) butir.aturan = { jenis: 'abaikan' };
+    butir.dimensi = "kemudahan";
+    if (butir.aturan === null) butir.aturan = { jenis: "abaikan" };
   }
 
   return rancangan;
@@ -43,9 +43,11 @@ function petakanSemuanya(impor: {
   baris: Record<string, string>[];
   nomorBaris: number[];
 }) {
-  const rancangan = putuskanSemuanya(bangunRancangan('skemaA', impor.header, impor.baris));
+  const rancangan = putuskanSemuanya(
+    bangunRancangan("skemaA", impor.header, impor.baris),
+  );
   const final = finalkanSkema(rancangan);
-  if (final.status !== 'siap') throw new Error('skema seharusnya siap');
+  if (final.status !== "siap") throw new Error("skema seharusnya siap");
 
   const petaan = bangunResponden(
     impor.baris,
@@ -57,76 +59,85 @@ function petakanSemuanya(impor: {
   return { skema: final.skema, petaan };
 }
 
-describe('pemetaan kolom dari berkas nyata', () => {
-  it('menaikkan kolom Likert menjadi pertanyaan dan menahan butir Yes/No/Maybe', () => {
+describe("pemetaan kolom dari berkas nyata", () => {
+  it("menaikkan kolom Likert menjadi pertanyaan dan menahan butir Yes/No/Maybe", () => {
     const impor = imporPostTest(30);
-    const rancangan = bangunRancangan('skemaA', impor.header, impor.baris);
+    const rancangan = bangunRancangan("skemaA", impor.header, impor.baris);
 
-    const q1 = rancangan.butir.find((b) => b.kolomAsal === 'q1');
+    const q1 = rancangan.butir.find((b) => b.kolomAsal === "q1");
     expect(q1?.aturan).not.toBe(null);
 
-    const q11 = rancangan.butir.find((b) => b.kolomAsal === 'q11');
+    const q11 = rancangan.butir.find((b) => b.kolomAsal === "q11");
     expect(q11?.aturan).toBe(null);
-    expect(q11?.contohNilai.join(' ')).toContain('Maybe');
+    expect(q11?.contohNilai.join(" ")).toContain("Maybe");
   });
 
-  it('tidak menebak skala pada sesi kecil yang tidak memuat kelima opsi', () => {
+  it("tidak menebak skala pada sesi kecil yang tidak memuat kelima opsi", () => {
     // Tiga peserta hanya memakai tiga tingkat; skala 5 poin dan 3 poin sama-sama mungkin.
     const impor = bacaBerkas(
       bukuKerjaSesi(
         [
-          { email: 'a@example.com', nama: 'A', tingkat: 'Disagree' },
-          { email: 'b@example.com', nama: 'B', tingkat: 'Neutral' },
-          { email: 'c@example.com', nama: 'C', tingkat: 'Agree' },
+          { email: "a@example.com", nama: "A", tingkat: "Disagree" },
+          { email: "b@example.com", nama: "B", tingkat: "Neutral" },
+          { email: "c@example.com", nama: "C", tingkat: "Agree" },
         ],
-        'xlsx',
+        "xlsx",
       ),
-      'kecil.xlsx',
+      "kecil.xlsx",
     );
-    if (impor.status !== 'berhasil') throw new Error('impor seharusnya berhasil');
-    const rancangan = bangunRancangan('skemaA', impor.header, impor.baris);
+    if (impor.status !== "berhasil")
+      throw new Error("impor seharusnya berhasil");
+    const rancangan = bangunRancangan("skemaA", impor.header, impor.baris);
 
-    const q1 = rancangan.butir.find((b) => b.kolomAsal === 'q1');
+    const q1 = rancangan.butir.find((b) => b.kolomAsal === "q1");
     expect(q1?.aturan).toBe(null);
-    expect(q1?.alasan).toContain('5 poin');
+    expect(q1?.alasan).toContain("5 poin");
     expect(q1?.contohNilai).toHaveLength(3);
-    expect(rancangan.peran.kolom.find((k) => k.header === 'q1')?.peran).toBe('belum-diputuskan');
+    expect(rancangan.peran.kolom.find((k) => k.header === "q1")?.peran).toBe(
+      "belum-diputuskan",
+    );
   });
 
-  it('mengenali Email dan Name tanpa diberi tahu', () => {
+  it("mengenali Email dan Name tanpa diberi tahu", () => {
     const impor = imporPostTest(5);
-    const rancangan = bangunRancangan('skemaA', impor.header, impor.baris);
-    const peran = new Map(rancangan.peran.kolom.map((k) => [k.header, k.peran]));
+    const rancangan = bangunRancangan("skemaA", impor.header, impor.baris);
+    const peran = new Map(
+      rancangan.peran.kolom.map((k) => [k.header, k.peran]),
+    );
 
-    expect(peran.get('Email')).toBe('email');
-    expect(peran.get('Name')).toBe('nama');
+    expect(peran.get("Email")).toBe("email");
+    expect(peran.get("Name")).toBe("nama");
   });
 
-  it('menolak finalisasi selama butir Yes/No/Maybe belum diputuskan', () => {
+  it("menolak finalisasi selama butir Yes/No/Maybe belum diputuskan", () => {
     const impor = imporPostTest(30);
-    const rancangan = bangunRancangan('skemaA', impor.header, impor.baris);
-    rancangan.perlakuanKosong = 'abaikan';
-    for (const butir of rancangan.butir) butir.dimensi = 'kemudahan';
+    const rancangan = bangunRancangan("skemaA", impor.header, impor.baris);
+    rancangan.perlakuanKosong = "abaikan";
+    for (const butir of rancangan.butir) butir.dimensi = "kemudahan";
 
     const hasil = finalkanSkema(rancangan);
-    expect(hasil.status).toBe('belum-lengkap');
-    if (hasil.status !== 'belum-lengkap') return;
-    expect(hasil.masalah.map((m) => m.jenis)).toContain('peran-belum-diputuskan');
+    expect(hasil.status).toBe("belum-lengkap");
+    if (hasil.status !== "belum-lengkap") return;
+    expect(hasil.masalah.map((m) => m.jenis)).toContain(
+      "peran-belum-diputuskan",
+    );
   });
 
-  it('menghasilkan Skema setelah seluruh keputusan diambil', () => {
+  it("menghasilkan Skema setelah seluruh keputusan diambil", () => {
     const impor = imporPostTest(30);
-    const hasil = finalkanSkema(putuskanSemuanya(bangunRancangan('skemaA', impor.header, impor.baris)));
+    const hasil = finalkanSkema(
+      putuskanSemuanya(bangunRancangan("skemaA", impor.header, impor.baris)),
+    );
 
-    expect(hasil.status).toBe('siap');
-    if (hasil.status !== 'siap') return;
+    expect(hasil.status).toBe("siap");
+    if (hasil.status !== "siap") return;
     expect(hasil.skema.butir).toHaveLength(20);
-    expect(hasil.skema.perlakuanKosong).toBe('abaikan');
+    expect(hasil.skema.perlakuanKosong).toBe("abaikan");
   });
 });
 
-describe('dari berkas ke nilai tanpa kode uji yang ikut memetakan', () => {
-  it('menilai 500 baris lewat jalur pemetaan sungguhan', () => {
+describe("dari berkas ke nilai tanpa kode uji yang ikut memetakan", () => {
+  it("menilai 500 baris lewat jalur pemetaan sungguhan", () => {
     const impor = imporPostTest(500);
     const { skema, petaan } = petakanSemuanya(impor);
 
@@ -140,13 +151,17 @@ describe('dari berkas ke nilai tanpa kode uji yang ikut memetakan', () => {
     // Strongly agree=5) berjumlah 58 dari skor maksimum 5 per butir, sehingga
     // nilai = (58/5) / 19 x 100 = 1160/19.
     const peserta0 = petaan.responden[0];
-    if (peserta0 === undefined) throw new Error('baris pertama seharusnya ada');
+    if (peserta0 === undefined) throw new Error("baris pertama seharusnya ada");
     const nilaiPeserta0 = hitungNilaiResponden(peserta0, skema);
     expect(nilaiPeserta0.butirTerhitung).toBe(19);
     expect(nilaiPeserta0.nilai).not.toBe(null);
     expect(nilaiPeserta0.nilai).toBeCloseTo(1160 / 19, 8);
 
-    const sesi = bangunNilaiSesi({ sesiId: 's1', namaSesi: 'Post-Test' }, petaan.responden, skema);
+    const sesi = bangunNilaiSesi(
+      { sesiId: "s1", namaSesi: "Post-Test" },
+      petaan.responden,
+      skema,
+    );
     expect(sesi.nilai.size).toBe(500);
 
     // q11 beraturan abaikan tidak pernah menghasilkan peringatan (skorMaksAturan
@@ -156,17 +171,17 @@ describe('dari berkas ke nilai tanpa kode uji yang ikut memetakan', () => {
     expect(sesi.peringatan.size).toBe(0);
   });
 
-  it('memisahkan kolom meta dari kolom jawaban', () => {
+  it("memisahkan kolom meta dari kolom jawaban", () => {
     const { petaan } = petakanSemuanya(imporPostTest(10));
 
     const satu = petaan.responden[0];
-    expect(satu?.meta['Gender']).toBeDefined();
-    expect(satu?.meta['Age']).toBeDefined();
-    expect(satu?.jawaban['Gender']).toBeUndefined();
-    expect(satu?.jawaban['q1']).toBeDefined();
+    expect(satu?.meta["Gender"]).toBeDefined();
+    expect(satu?.meta["Age"]).toBeDefined();
+    expect(satu?.jawaban["Gender"]).toBeUndefined();
+    expect(satu?.jawaban["q1"]).toBeDefined();
   });
 
-  it('tidak mencatat cap waktu bila berkasnya memang tidak punya kolom itu', () => {
+  it("tidak mencatat cap waktu bila berkasnya memang tidak punya kolom itu", () => {
     // Fixture Post-Test tidak memuat kolom Timestamp. Peta peran harus
     // menerimanya tanpa mengarang cap waktu dari kolom lain.
     const { petaan } = petakanSemuanya(imporPostTest(10));
@@ -175,59 +190,125 @@ describe('dari berkas ke nilai tanpa kode uji yang ikut memetakan', () => {
   });
 });
 
-describe('peringkat memakai cap waktu yang baru terpetakan', () => {
-  it('mengurutkan dengan pemecah seri dari cap waktu sintetis (tangan, bukan hasil pemetaan)', () => {
-    const capWaktu = ['25/4/2026 08:00:00', '25/4/2026 09:00:00', '26/4/2026 08:00:00'];
+describe("peringkat memakai cap waktu yang baru terpetakan", () => {
+  it("mengurutkan dengan pemecah seri dari cap waktu sintetis (tangan, bukan hasil pemetaan)", () => {
+    const capWaktu = [
+      "25/4/2026 08:00:00",
+      "25/4/2026 09:00:00",
+      "26/4/2026 08:00:00",
+    ];
     const format = tebakFormatTanggal(capWaktu);
-    expect(format.status).toBe('yakin');
-    if (format.status !== 'yakin') return;
+    expect(format.status).toBe("yakin");
+    if (format.status !== "yakin") return;
 
     const banding = buatBandingWaktu(format.format);
     const hasil = urutkanPeringkat(
       [
-        { respondenId: 'telat', nilai: 80, jumlahTerjawab: 20, waktuKirim: capWaktu[1] ?? null },
-        { respondenId: 'awal', nilai: 80, jumlahTerjawab: 20, waktuKirim: capWaktu[0] ?? null },
-        { respondenId: 'tertinggi', nilai: 95, jumlahTerjawab: 20, waktuKirim: capWaktu[2] ?? null },
+        {
+          respondenId: "telat",
+          nilai: 80,
+          jumlahTerjawab: 20,
+          waktuKirim: capWaktu[1] ?? null,
+        },
+        {
+          respondenId: "awal",
+          nilai: 80,
+          jumlahTerjawab: 20,
+          waktuKirim: capWaktu[0] ?? null,
+        },
+        {
+          respondenId: "tertinggi",
+          nilai: 95,
+          jumlahTerjawab: 20,
+          waktuKirim: capWaktu[2] ?? null,
+        },
       ],
       banding,
     );
 
-    expect(hasil.map((h) => h.respondenId)).toEqual(['tertinggi', 'awal', 'telat']);
+    expect(hasil.map((h) => h.respondenId)).toEqual([
+      "tertinggi",
+      "awal",
+      "telat",
+    ]);
   });
 
-  it('menjalankan jalur waktu sungguhan: peran waktu terdeteksi, waktuKirim terpetakan bangunResponden, format tertebak dari data, lalu memecah seri peringkat', () => {
+  it("menjalankan jalur waktu sungguhan: peran waktu terdeteksi, waktuKirim terpetakan bangunResponden, format tertebak dari data, lalu memecah seri peringkat", () => {
     // Dua peserta menjawab "Agree" di seluruh 20 butir sehingga nilai dan
     // jumlahTerjawab keduanya identik; satu-satunya pembeda urutan adalah
     // cap waktu kirim yang sungguhan dipetakan lewat bangunResponden, bukan
     // larik tanggal yang ditulis tangan seperti pada uji di atas.
     const peserta: PesertaFixture[] = [
-      { email: 'sd@example.com', nama: 'Sangat Tidak Setuju', tingkat: 'Strongly disagree', waktu: '5/6/2026 08:00:00' },
-      { email: 'd@example.com', nama: 'Tidak Setuju', tingkat: 'Disagree', waktu: '6/6/2026 08:00:00' },
-      { email: 'n@example.com', nama: 'Netral', tingkat: 'Neutral', waktu: '7/6/2026 08:00:00' },
+      {
+        email: "sd@example.com",
+        nama: "Sangat Tidak Setuju",
+        tingkat: "Strongly disagree",
+        waktu: "5/6/2026 08:00:00",
+      },
+      {
+        email: "d@example.com",
+        nama: "Tidak Setuju",
+        tingkat: "Disagree",
+        waktu: "6/6/2026 08:00:00",
+      },
+      {
+        email: "n@example.com",
+        nama: "Netral",
+        tingkat: "Neutral",
+        waktu: "7/6/2026 08:00:00",
+      },
       // Hari > 12 pada dua baris ini adalah bukti nyata untuk tebakFormatTanggal.
-      { email: 'a1@example.com', nama: 'Setuju Awal', tingkat: 'Agree', waktu: '20/6/2026 08:00:00' },
-      { email: 'a2@example.com', nama: 'Setuju Telat', tingkat: 'Agree', waktu: '21/6/2026 08:00:00' },
-      { email: 'sa@example.com', nama: 'Sangat Setuju', tingkat: 'Strongly agree', waktu: '22/6/2026 08:00:00' },
+      {
+        email: "a1@example.com",
+        nama: "Setuju Awal",
+        tingkat: "Agree",
+        waktu: "20/6/2026 08:00:00",
+      },
+      {
+        email: "a2@example.com",
+        nama: "Setuju Telat",
+        tingkat: "Agree",
+        waktu: "21/6/2026 08:00:00",
+      },
+      {
+        email: "sa@example.com",
+        nama: "Sangat Setuju",
+        tingkat: "Strongly agree",
+        waktu: "22/6/2026 08:00:00",
+      },
     ];
 
-    const impor = bacaBerkas(bukuKerjaSesi(peserta, 'xlsx'), 'sesi-waktu.xlsx');
-    if (impor.status !== 'berhasil') throw new Error('impor seharusnya berhasil');
+    const impor = bacaBerkas(bukuKerjaSesi(peserta, "xlsx"), "sesi-waktu.xlsx");
+    if (impor.status !== "berhasil")
+      throw new Error("impor seharusnya berhasil");
 
-    const rancangan = putuskanSemuanya(bangunRancangan('skemaWaktu', impor.header, impor.baris));
+    const rancangan = putuskanSemuanya(
+      bangunRancangan("skemaWaktu", impor.header, impor.baris),
+    );
     // Peran 'waktu' pada kolom Timestamp harus tertebak sendiri oleh
     // tebakPeranKolom, tanpa campur tangan putuskanSemuanya.
-    expect(rancangan.peran.kolom.find((k) => k.header === 'Timestamp')?.peran).toBe('waktu');
+    expect(
+      rancangan.peran.kolom.find((k) => k.header === "Timestamp")?.peran,
+    ).toBe("waktu");
 
     const final = finalkanSkema(rancangan);
-    if (final.status !== 'siap') throw new Error('skema seharusnya siap');
+    if (final.status !== "siap") throw new Error("skema seharusnya siap");
 
-    const petaan = bangunResponden(impor.baris, impor.nomorBaris, rancangan.peran, final.skema, hashPalsu);
+    const petaan = bangunResponden(
+      impor.baris,
+      impor.nomorBaris,
+      rancangan.peran,
+      final.skema,
+      hashPalsu,
+    );
     expect(petaan.waktuKirim.every((satu) => satu !== null)).toBe(true);
 
-    const format = tebakFormatTanggal(petaan.waktuKirim.filter((satu): satu is string => satu !== null));
-    expect(format.status).toBe('yakin');
-    if (format.status !== 'yakin') return;
-    expect(format.format).toBe('DMY');
+    const format = tebakFormatTanggal(
+      petaan.waktuKirim.filter((satu): satu is string => satu !== null),
+    );
+    expect(format.status).toBe("yakin");
+    if (format.status !== "yakin") return;
+    expect(format.format).toBe("DMY");
 
     const banding = buatBandingWaktu(format.format);
     const idKeNama = new Map(petaan.responden.map((r) => [r.id, r.nama]));
@@ -244,8 +325,12 @@ describe('peringkat memakai cap waktu yang baru terpetakan', () => {
 
     const hasil = urutkanPeringkat(baris, banding);
 
-    const awal = hasil.find((h) => idKeNama.get(h.respondenId) === 'Setuju Awal');
-    const telat = hasil.find((h) => idKeNama.get(h.respondenId) === 'Setuju Telat');
+    const awal = hasil.find(
+      (h) => idKeNama.get(h.respondenId) === "Setuju Awal",
+    );
+    const telat = hasil.find(
+      (h) => idKeNama.get(h.respondenId) === "Setuju Telat",
+    );
     expect(awal?.nilai).toBeCloseTo(telat?.nilai ?? NaN, 8);
     expect(awal?.jumlahTerjawab).toBe(telat?.jumlahTerjawab);
     // Nilai dan jumlah terjawab sama persis; kalau peringkatnya tetap berbeda,
@@ -253,16 +338,16 @@ describe('peringkat memakai cap waktu yang baru terpetakan', () => {
     expect(awal?.peringkat).not.toBe(telat?.peringkat);
 
     expect(hasil.map((h) => idKeNama.get(h.respondenId))).toEqual([
-      'Sangat Setuju',
-      'Setuju Awal',
-      'Setuju Telat',
-      'Netral',
-      'Tidak Setuju',
-      'Sangat Tidak Setuju',
+      "Sangat Setuju",
+      "Setuju Awal",
+      "Setuju Telat",
+      "Netral",
+      "Tidak Setuju",
+      "Sangat Tidak Setuju",
     ]);
   });
 
-  it('memberi peringkat dari nilai sesi yang benar-benar dihitung', () => {
+  it("memberi peringkat dari nilai sesi yang benar-benar dihitung", () => {
     const { skema, petaan } = petakanSemuanya(imporPostTest(20));
 
     const baris = petaan.responden.map((satu) => {
