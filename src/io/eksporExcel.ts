@@ -6,14 +6,14 @@ import type { TabelTampil } from '../core/tabelTampil';
 const PANJANG_MAKS_NAMA = 31;
 
 export function tulisExcel(tabel: TabelTampil[]): ArrayBuffer {
-  for (const satu of tabel) pastikanTabelSah(satu);
-
   if (tabel.length === 0) {
     throw new Error(
       'tulisExcel dipanggil tanpa satu tabel pun untuk ditulis, padahal berkas Excel harus berisi ' +
         'minimal satu lembar. Sertakan minimal satu TabelTampil sebelum memanggil tulisExcel.',
     );
   }
+
+  for (const satu of tabel) pastikanTabelSah(satu);
 
   const buku = XLSX.utils.book_new();
   const namaTerpakai = new Set<string>();

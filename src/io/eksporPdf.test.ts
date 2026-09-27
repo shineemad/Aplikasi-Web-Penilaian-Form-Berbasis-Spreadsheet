@@ -125,19 +125,18 @@ describe('tulisPdf', () => {
   });
 
   it('menulis tabel tanpa baris data tanpa error', () => {
+    // Bedakan dari uji di bawah: tabel yang ADA tetapi belum berisi baris itu
+    // sah — begitulah sesi yang belum diisi siapa pun tampak. Yang ditolak
+    // adalah tidak adanya tabel sama sekali.
     expect(() => tulisPdf([tabelSempit(0)], KEPALA)).not.toThrow();
   });
 
-  it('menghasilkan berkas PDF yang sah walau tidak ada satu pun tabel', () => {
-    // Temuan 3: tulisPdf([], KEPALA) tidak pernah diuji. Perilaku sekarang
-    // dipatok di sini: bukan error, melainkan berkas sah berisi kepala
-    // laporan dan catatan kaki saja pada satu halaman potret kosong.
-    const isi = tulisPdf([], KEPALA);
-    expect(awalanPdf(isi)).toBe('%PDF-');
-
-    const info = tulisPdf([], KEPALA, { kembalikanInfo: true });
-    expect(info.jumlahHalaman).toBe(1);
-    expect(info.orientasiPerTabel).toEqual([]);
-    expect(info.jumlahPotonganPerTabel).toEqual([]);
+  it('menolak dipanggil tanpa satu tabel pun', () => {
+    // Sebelumnya tulisPdf([]) menghasilkan berkas sah berisi kepala laporan
+    // "Jumlah responden: 500" tanpa satu baris data — laporan yang tampak
+    // benar padahal kosong. tulisExcel sudah menolak; PDF menyusul.
+    expect(() => tulisPdf([], KEPALA)).toThrow('tanpa satu tabel pun');
+    expect(() => tulisPdf([], KEPALA)).toThrow('Tabel yang tidak punya baris tetap sah');
+    expect(() => tulisPdf([], KEPALA, { kembalikanInfo: true })).toThrow('tanpa satu tabel pun');
   });
 });

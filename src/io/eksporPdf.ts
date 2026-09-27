@@ -55,6 +55,16 @@ export function tulisPdf(
   kepala: KepalaLaporan,
   opsi?: { kembalikanInfo: true },
 ): Uint8Array | InfoPdf {
+  if (tabel.length === 0) {
+    throw new Error(
+      'tulisPdf dipanggil tanpa satu tabel pun untuk ditulis, sehingga berkasnya hanya akan berisi ' +
+        'kepala laporan dan catatan kaki — laporan yang tampak sah lengkap dengan jumlah responden, ' +
+        'padahal tidak memuat satu baris data pun. Sertakan minimal satu TabelTampil sebelum ' +
+        'memanggil tulisPdf. Tabel yang tidak punya baris tetap sah: itulah cara menyatakan sesi ' +
+        'yang memang belum diisi siapa pun.',
+    );
+  }
+
   for (const satu of tabel) pastikanTabelSah(satu);
 
   const rencanaPerTabel = tabel.map((satu) =>
