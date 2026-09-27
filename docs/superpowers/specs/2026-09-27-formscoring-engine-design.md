@@ -105,12 +105,14 @@ Setiap modul punya satu tanggung jawab dan antarmuka yang jelas, sehingga dapat 
 | Modul             | Masukan                                    | Keluaran                                       | Ketergantungan               |
 | ----------------- | ------------------------------------------ | ---------------------------------------------- | ---------------------------- |
 | **Importer**      | File `.xlsx`/`.csv` atau URL published CSV | Tabel mentah + daftar header                   | SheetJS, `fetch`             |
-| **Column Mapper** | Daftar header + contoh nilai               | Skema (peran kolom + aturan skor)              | —                            |
+| **Column Mapper** | Daftar header + contoh nilai               | `PetaPeran` (kolom mana Email, Nama, cap waktu, atau meta) **dan** `Skema` (bagaimana kolom pertanyaan dinilai) | —                            |
 | **Scorer**        | Satu jawaban + satu aturan                 | Angka, `null`, atau peringatan                 | **Tidak ada** (fungsi murni) |
 | **Aggregator**    | Kumpulan skor + bobot                      | Nilai akhir per responden / indeks per dimensi | **Tidak ada** (fungsi murni) |
 | **Merger**        | Hasil beberapa sesi + urutan sesi          | Tabel gabungan melebar + status per orang      | **Tidak ada** (fungsi murni) |
 | **Store**         | Perintah baca/tulis                        | Data tersimpan                                 | Apps Script Web App          |
 | **Reporter**      | Hasil agregasi                             | Tabel layar, berkas Excel, berkas PDF          | SheetJS, jsPDF               |
+
+Keluaran Column Mapper sengaja berupa **dua** benda, bukan satu: dibaca bersama §6.2, sebuah `Skema` tunggal tidak bisa memuat keduanya, karena tabel `Skema` hanya punya kolom untuk `kolom_asal`, `label`, `dimensi`, `aturan`, `parameter`, `skor_maks`, dan `bobot` — tidak ada tempat untuk menyatakan "kolom ini adalah Email". `PetaPeran` dan `Skema` diturunkan dari kumpulan header yang sama dan disimpan di bawah satu `skema_id` yang sama. (Koreksi terhadap rumusan awal spec ini, diputuskan saat menyusun rencana "Pemetaan Kolom".)
 
 **Scorer, Aggregator, dan Merger tidak bergantung pada apa pun.** Ini disengaja: ketiganya adalah tempat seluruh klaim akurasi berada, dan semuanya dapat diuji tanpa browser, tanpa jaringan, tanpa Google.
 
@@ -243,7 +245,7 @@ Prinsip di balik ketiganya sama: **sistem harus berisik saat ragu, bukan diam.**
 
 2. **Opsi tak dikenal tidak boleh bernilai nol secara diam-diam.** Bila sebuah kolom berisi opsi yang tidak ada di peta, layar pemetaan menampilkan peringatan yang menyebutkan opsi-opsi tersebut dan jumlah barisnya, lalu menuntut keputusan admin: lengkapi petanya, atau ubah aturan kolom menjadi `abaikan`. Skema tidak dapat disimpan selama masih ada kolom yang belum diputuskan.
 
-3. **Kosong bukan nol.** Jawaban kosong disimpan sebagai `null`, berbeda dari angka 0. Perlakuannya dipilih per skema: `null` dikeluarkan dari perhitungan rata-rata, atau dihitung sebagai 0. Keduanya sah secara metodologis tetapi menghasilkan angka yang berbeda, sehingga harus menjadi keputusan sadar.
+3. **Kosong bukan nol.** Jawaban kosong disimpan sebagai `null`, berbeda dari angka 0. Perlakuannya dipilih per skema: `null` dikeluarkan dari perhitungan rata-rata, atau dihitung sebagai 0. Keduanya sah secara metodologis tetapi menghasilkan angka yang berbeda, sehingga harus menjadi keputusan sadar — rancangan yang belum diputuskan menyimpan perlakuan ini sebagai `null` (bukan salah satu dari keduanya secara diam-diam), dan finalisasi menolak menghasilkan `Skema` selama admin belum memilih. (Koreksi terhadap rumusan awal spec ini, diputuskan saat menyusun rencana "Pemetaan Kolom".)
 
 ---
 
