@@ -21,6 +21,7 @@ Berlaku untuk **setiap** tugas di rencana ini. Diambil kata per kata dari spec d
 5. **Normalisasi sebelum mencocokkan:** buang spasi tepi → rapatkan spasi ganda → huruf kecil.
 6. **Istilah domain memakai Bahasa Indonesia** dan tidak diterjemahkan: `Proyek`, `Sesi`, `Responden`, `Skema`, `Penilaian`, `nilai`, `bobot`, `selisih`, `dimensi`. Komentar dan pesan commit juga Bahasa Indonesia.
 7. **Tulis uji lebih dulu.** Setiap tugas: uji gagal → implementasi minimal → uji lulus → commit.
+8. **Nilai hasil perhitungan dibandingkan dengan `toBeCloseTo`, bukan `toBe`.** `core` mengembalikan angka pecahan apa adanya dan **tidak membulatkan**. Pembulatan adalah keputusan penyajian dan akan dikenakan sekali di lapisan Reporter pada Rencana 2. Konsekuensinya, `(0,2 + 0,2 + 0,2) / 3 × 100` menghasilkan `20.000000000000004`, bukan `20` — galat IEEE-754 yang normal. Karena itu setiap perbandingan terhadap `nilai`, `indeks`, atau `selisih` memakai `toBeCloseTo`. Bilangan bulat seperti pencacah (`butirTerhitung`, `pasanganDihitung`) dan nilai `null` tetap memakai `toBe`.
 
 ## Struktur Berkas
 
@@ -747,7 +748,7 @@ describe('hitungNilaiResponden', () => {
       responden('a', { q1: 'Strongly agree', q2: 'Strongly agree', q3: 'Strongly agree' }),
       skemaLikert('abaikan'),
     );
-    expect(hasil.nilai).toBe(100);
+    expect(hasil.nilai).toBeCloseTo(100, 10);
     expect(hasil.butirTerhitung).toBe(3);
   });
 
@@ -761,7 +762,7 @@ describe('hitungNilaiResponden', () => {
       }),
       skemaLikert('abaikan'),
     );
-    expect(hasil.nilai).toBe(20);
+    expect(hasil.nilai).toBeCloseTo(20, 10);
   });
 
   it('mengeluarkan butir kosong dari perhitungan bila perlakuannya abaikan', () => {
@@ -769,7 +770,7 @@ describe('hitungNilaiResponden', () => {
       responden('a', { q1: 'Strongly agree', q2: '', q3: 'Strongly agree' }),
       skemaLikert('abaikan'),
     );
-    expect(hasil.nilai).toBe(100);
+    expect(hasil.nilai).toBeCloseTo(100, 10);
     expect(hasil.butirTerhitung).toBe(2);
     expect(hasil.butirKosong).toBe(1);
   });
@@ -799,7 +800,7 @@ describe('hitungNilaiResponden', () => {
     );
     expect(hasil.peringatan).toHaveLength(1);
     expect(hasil.peringatan.join(' ')).toContain('Butir 2');
-    expect(hasil.nilai).toBe(100);
+    expect(hasil.nilai).toBeCloseTo(100, 10);
     expect(hasil.butirTerhitung).toBe(2);
   });
 
@@ -814,9 +815,10 @@ describe('hitungNilaiResponden', () => {
       ...dasar,
       butir: dasar.butir.map((b, i) => ({ ...b, bobot: [20, 30, 50][i] as number })),
     };
-    expect(hitungNilaiResponden(responden('a', jawaban), kecil).nilai).toBe(
-      hitungNilaiResponden(responden('a', jawaban), besar).nilai,
-    );
+    const nilaiKecil = hitungNilaiResponden(responden('a', jawaban), kecil).nilai;
+    const nilaiBesar = hitungNilaiResponden(responden('a', jawaban), besar).nilai;
+    expect(nilaiKecil).not.toBe(null);
+    expect(Number(nilaiKecil)).toBeCloseTo(Number(nilaiBesar), 10);
   });
 
   it('mengabaikan kolom yang aturannya abaikan', () => {
@@ -843,7 +845,7 @@ describe('hitungNilaiResponden', () => {
       }),
       skema,
     );
-    expect(hasil.nilai).toBe(100);
+    expect(hasil.nilai).toBeCloseTo(100, 10);
     expect(hasil.butirTerhitung).toBe(3);
   });
 });
@@ -858,7 +860,7 @@ describe('hitungIndeksDimensi', () => {
       skemaLikert('abaikan'),
     );
     expect(hasil.map((d) => d.dimensi)).toEqual(['kemudahan', 'kepuasan']);
-    expect(hasil[0]?.indeks).toBe(100);
+    expect(hasil[0]?.indeks).toBeCloseTo(100, 10);
     expect(hasil[0]?.pasanganDihitung).toBe(4);
   });
 
@@ -867,7 +869,7 @@ describe('hitungIndeksDimensi', () => {
       [responden('a', { q1: 'Strongly disagree', q2: 'Strongly disagree', q3: 'Strongly disagree' })],
       skemaLikert('abaikan'),
     );
-    expect(hasil[0]?.indeks).toBe(20);
+    expect(hasil[0]?.indeks).toBeCloseTo(20, 10);
   });
 
   it('mengecilkan penyebut saat jawaban kosong diabaikan', () => {
@@ -875,7 +877,7 @@ describe('hitungIndeksDimensi', () => {
       [responden('a', { q1: 'Strongly agree', q2: '', q3: 'Strongly agree' })],
       skemaLikert('abaikan'),
     );
-    expect(hasil[0]?.indeks).toBe(100);
+    expect(hasil[0]?.indeks).toBeCloseTo(100, 10);
     expect(hasil[0]?.pasanganDihitung).toBe(1);
   });
 
@@ -885,7 +887,7 @@ describe('hitungIndeksDimensi', () => {
       skemaLikert('nol'),
     );
     // (5 + 0) / (5 + 5) x 100
-    expect(hasil[0]?.indeks).toBe(50);
+    expect(hasil[0]?.indeks).toBeCloseTo(50, 10);
     expect(hasil[0]?.pasanganDihitung).toBe(2);
   });
 
@@ -894,7 +896,7 @@ describe('hitungIndeksDimensi', () => {
       [responden('a', { q1: 'Strongly agree', q2: 'Maybe', q3: 'Strongly agree' })],
       skemaLikert('nol'),
     );
-    expect(hasil[0]?.indeks).toBe(100);
+    expect(hasil[0]?.indeks).toBeCloseTo(100, 10);
     expect(hasil[0]?.pasanganDihitung).toBe(1);
   });
 
@@ -904,7 +906,7 @@ describe('hitungIndeksDimensi', () => {
       skemaLikert('abaikan'),
     );
     expect(hasil[0]?.indeks).toBe(null);
-    expect(hasil[1]?.indeks).toBe(100);
+    expect(hasil[1]?.indeks).toBeCloseTo(100, 10);
   });
 });
 
@@ -931,7 +933,7 @@ describe('hitungIndeksKeseluruhan', () => {
       ],
       skema,
     );
-    expect(hasil).toBe(80);
+    expect(hasil).toBeCloseTo(80, 10);
   });
 
   it('mengembalikan null bila seluruh dimensi kosong', () => {
@@ -1738,7 +1740,7 @@ describe('instrumen Post-Test nyata', () => {
   it('memberi nilai 100 untuk responden yang menjawab "Strongly Agree" di semua butir', () => {
     const responden = buatResponden('budi@example.com', 'Budi', jawabanSeragam('Strongly Agree'));
     const hasil = hitungNilaiResponden(responden, skemaPostTest('abaikan'));
-    expect(hasil.nilai).toBe(100);
+    expect(hasil.nilai).toBeCloseTo(100, 10);
     expect(hasil.butirTerhitung).toBe(20);
     expect(hasil.peringatan).toHaveLength(0);
   });
@@ -1747,14 +1749,15 @@ describe('instrumen Post-Test nyata', () => {
     const skema = skemaPostTest('abaikan');
     const besar = buatResponden('a@example.com', 'A', jawabanSeragam('Strongly Agree'));
     const kecil = buatResponden('b@example.com', 'B', jawabanSeragam('Strongly agree'));
-    expect(hitungNilaiResponden(besar, skema).nilai).toBe(
-      hitungNilaiResponden(kecil, skema).nilai,
-    );
+    const nilaiBesar = hitungNilaiResponden(besar, skema).nilai;
+    const nilaiKecil = hitungNilaiResponden(kecil, skema).nilai;
+    expect(nilaiBesar).not.toBe(null);
+    expect(Number(nilaiBesar)).toBeCloseTo(Number(nilaiKecil), 10);
   });
 
   it('memberi 20 bukan 0 untuk responden yang menjawab minimum di semua butir', () => {
     const responden = buatResponden('c@example.com', 'C', jawabanSeragam('Strongly disagree'));
-    expect(hitungNilaiResponden(responden, skemaPostTest('abaikan')).nilai).toBe(20);
+    expect(hitungNilaiResponden(responden, skemaPostTest('abaikan')).nilai).toBeCloseTo(20, 10);
   });
 
   it('memunculkan peringatan untuk butir Yes/No/Maybe dan tidak memberinya angka', () => {
@@ -1767,14 +1770,14 @@ describe('instrumen Post-Test nyata', () => {
     expect(hasil.peringatan.join(' ')).toContain('Butir 11');
     expect(hasil.butirTerhitung).toBe(19);
     // 19 butir bernilai 4 dari 5 = 80 persen. Butir ke-11 tidak menyeret nilai ke bawah.
-    expect(hasil.nilai).toBe(80);
+    expect(hasil.nilai).toBeCloseTo(80, 10);
   });
 
   it('tetap memproses responden yang namanya kosong', () => {
     const responden = buatResponden('e@example.com', null, jawabanSeragam('Agree'));
     const hasil = hitungNilaiResponden(responden, skemaPostTest('abaikan'));
     expect(responden.nama).toBe(null);
-    expect(hasil.nilai).toBe(80);
+    expect(hasil.nilai).toBeCloseTo(80, 10);
   });
 
   it('memberi indeks 100 persen di seluruh lima dimensi bila semua menjawab maksimum', () => {
@@ -1793,9 +1796,9 @@ describe('instrumen Post-Test nyata', () => {
       'kepuasan',
     ]);
     for (const d of dimensi) {
-      expect(d.indeks).toBe(100);
+      expect(d.indeks).toBeCloseTo(100, 10);
     }
-    expect(hitungIndeksKeseluruhan(dimensi, skema)).toBe(100);
+    expect(Number(hitungIndeksKeseluruhan(dimensi, skema))).toBeCloseTo(100, 10);
   });
 
   it('menyelesaikan 500 responden tanpa error', () => {
@@ -1845,7 +1848,8 @@ describe('penggabungan Pre-Test dan Post-Test', () => {
     expect(hasil.baris).toHaveLength(1);
     expect(hasil.baris[0]?.statusGabungan).toBe('lengkap');
     // Neutral = 3/5 = 60, Strongly Agree = 5/5 = 100
-    expect(hasil.baris[0]?.selisih).toBe(40);
+    expect(hasil.baris[0]?.selisih).not.toBe(null);
+    expect(Number(hasil.baris[0]?.selisih)).toBeCloseTo(40, 8);
   });
 
   it('tidak membuang peserta yang hanya ikut Post-Test dan tidak menghitungnya sebagai nol', () => {
