@@ -98,9 +98,50 @@ describe('bangunResponden', () => {
       SKEMA,
       hashPalsu,
     );
-    const id = hashPalsu('a@x.com').slice(0, 16);
-    expect(hasil.waktuKirim.get(id)).toBe('3/4/2026 08:00:00');
+    expect(hasil.waktuKirim[0]).toBe('3/4/2026 08:00:00');
     expect(hasil.responden[0]?.meta['Timestamp']).toBeUndefined();
+  });
+
+  it('menjaga cap waktu tiap baris beremail kosong, tidak saling menimpa', () => {
+    // Baris beremail kosong berbagi satu id. Cap waktu yang dikunci per id
+    // hanya menyisakan yang terakhir.
+    const hasil = bangunResponden(
+      baris([
+        { 'Email Address': '', Timestamp: '3/4/2026 08:00:00', q1: 'Agree' },
+        { 'Email Address': '', Timestamp: '3/4/2026 09:00:00', q1: 'Neutral' },
+      ]),
+      [2, 3],
+      peran(HEADER),
+      SKEMA,
+      hashPalsu,
+    );
+    expect(hasil.responden[0]?.id).toBe(hasil.responden[1]?.id);
+    expect(hasil.waktuKirim).toEqual(['3/4/2026 08:00:00', '3/4/2026 09:00:00']);
+  });
+
+  it('menjaga cap waktu tiap kiriman dari email yang sama', () => {
+    const hasil = bangunResponden(
+      baris([
+        { 'Email Address': 'a@x.com', Timestamp: '3/4/2026 08:00:00', q1: 'Agree' },
+        { 'Email Address': 'A@x.com', Timestamp: '5/4/2026 08:00:00', q1: 'Neutral' },
+      ]),
+      [2, 3],
+      peran(HEADER),
+      SKEMA,
+      hashPalsu,
+    );
+    expect(hasil.waktuKirim).toEqual(['3/4/2026 08:00:00', '5/4/2026 08:00:00']);
+  });
+
+  it('mencatat null untuk baris yang cap waktunya kosong', () => {
+    const hasil = bangunResponden(
+      baris([{ 'Email Address': 'a@x.com', Timestamp: '  ', q1: 'Agree' }]),
+      [2],
+      peran(HEADER),
+      SKEMA,
+      hashPalsu,
+    );
+    expect(hasil.waktuKirim).toEqual([null]);
   });
 
   it('bekerja tanpa kolom cap waktu sama sekali', () => {
@@ -113,7 +154,7 @@ describe('bangunResponden', () => {
       hashPalsu,
     );
     expect(hasil.responden).toHaveLength(1);
-    expect(hasil.waktuKirim.size).toBe(0);
+    expect(hasil.waktuKirim).toEqual([null]);
   });
 });
 

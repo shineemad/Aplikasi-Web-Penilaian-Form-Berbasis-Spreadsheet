@@ -169,7 +169,8 @@ describe('dari berkas ke nilai tanpa kode uji yang ikut memetakan', () => {
     // Fixture Post-Test tidak memuat kolom Timestamp. Peta peran harus
     // menerimanya tanpa mengarang cap waktu dari kolom lain.
     const { petaan } = petakanSemuanya(imporPostTest(10));
-    expect(petaan.waktuKirim.size).toBe(0);
+    expect(petaan.waktuKirim).toHaveLength(10);
+    expect(petaan.waktuKirim.every((satu) => satu === null)).toBe(true);
   });
 });
 

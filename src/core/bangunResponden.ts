@@ -5,8 +5,12 @@ import type { FungsiHash, Skema } from './tipe';
 
 export interface HasilPemetaan {
   responden: RespondenSesi[];
-  /** respondenId -> cap waktu mentah, untuk pemecah seri peringkat (spec 8.1). */
-  waktuKirim: Map<string, string>;
+  /**
+   * Cap waktu mentah per baris, sejajar dengan `responden`, untuk pemecah seri
+   * peringkat (spec 8.1). Per baris, bukan per id: baris beremail kosong dan
+   * email kembar berbagi id. `null` bila tidak ada kolom cap waktu atau isinya kosong.
+   */
+  waktuKirim: (string | null)[];
   /** Nomor baris asal yang emailnya kosong. Barisnya tetap dikembalikan, tidak dibuang. */
   barisTanpaEmail: number[];
   /** Benar bila peta peran tidak memuat satu pun kolom email. */
@@ -39,12 +43,12 @@ export function bangunResponden(
   }
 
   if (kolomEmail === undefined) {
-    return { responden: [], waktuKirim: new Map(), barisTanpaEmail: [], tanpaKolomEmail: true };
+    return { responden: [], waktuKirim: [], barisTanpaEmail: [], tanpaKolomEmail: true };
   }
 
   const kolomJawaban = skema.butir.map((butir) => butir.kolomAsal);
   const responden: RespondenSesi[] = [];
-  const waktuKirim = new Map<string, string>();
+  const waktuKirim: (string | null)[] = [];
   const barisTanpaEmail: number[] = [];
 
   for (let i = 0; i < baris.length; i += 1) {
@@ -81,12 +85,14 @@ export function bangunResponden(
       if (isi !== undefined) jawaban[kolom] = isi;
     }
 
+    let waktu: string | null = null;
     if (kolomWaktu !== undefined) {
       const isi = satu[kolomWaktu];
-      if (isi !== undefined && isi.trim() !== '') waktuKirim.set(id, isi.trim());
+      if (isi !== undefined && isi.trim() !== '') waktu = isi.trim();
     }
 
     responden.push({ id, email, nama, jawaban, meta });
+    waktuKirim.push(waktu);
   }
 
   return { responden, waktuKirim, barisTanpaEmail, tanpaKolomEmail: false };
