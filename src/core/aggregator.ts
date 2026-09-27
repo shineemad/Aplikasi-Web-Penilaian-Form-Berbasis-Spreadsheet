@@ -52,7 +52,7 @@ export function hitungNilaiResponden(
     totalTerbobot += butir.bobot * (hasil.skor / skorMaks);
   }
 
-  const nilai = totalBobot === 0 ? null : Math.round((totalTerbobot / totalBobot) * 100 * 1000) / 1000;
+  const nilai = totalBobot === 0 ? null : (totalTerbobot / totalBobot) * 100;
   return { respondenId: responden.id, nilai, butirTerhitung, butirKosong, peringatan };
 }
 
@@ -104,7 +104,7 @@ export function hitungIndeksDimensi(
     }
     return {
       dimensi,
-      indeks: Math.round((agg.jumlahSkor / agg.jumlahMaks) * 100 * 1000) / 1000,
+      indeks: (agg.jumlahSkor / agg.jumlahMaks) * 100,
       pasanganDihitung: agg.pasangan,
     };
   });

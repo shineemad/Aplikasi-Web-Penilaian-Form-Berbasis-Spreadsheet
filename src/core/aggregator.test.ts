@@ -40,7 +40,7 @@ describe('hitungNilaiResponden', () => {
       responden('a', { q1: 'Strongly agree', q2: 'Strongly agree', q3: 'Strongly agree' }),
       skemaLikert('abaikan'),
     );
-    expect(hasil.nilai).toBe(100);
+    expect(hasil.nilai).toBeCloseTo(100, 10);
     expect(hasil.butirTerhitung).toBe(3);
   });
 
@@ -54,7 +54,7 @@ describe('hitungNilaiResponden', () => {
       }),
       skemaLikert('abaikan'),
     );
-    expect(hasil.nilai).toBe(20);
+    expect(hasil.nilai).toBeCloseTo(20, 10);
   });
 
   it('mengeluarkan butir kosong dari perhitungan bila perlakuannya abaikan', () => {
@@ -62,7 +62,7 @@ describe('hitungNilaiResponden', () => {
       responden('a', { q1: 'Strongly agree', q2: '', q3: 'Strongly agree' }),
       skemaLikert('abaikan'),
     );
-    expect(hasil.nilai).toBe(100);
+    expect(hasil.nilai).toBeCloseTo(100, 10);
     expect(hasil.butirTerhitung).toBe(2);
     expect(hasil.butirKosong).toBe(1);
   });
@@ -92,7 +92,7 @@ describe('hitungNilaiResponden', () => {
     );
     expect(hasil.peringatan).toHaveLength(1);
     expect(hasil.peringatan.join(' ')).toContain('Butir 2');
-    expect(hasil.nilai).toBe(100);
+    expect(hasil.nilai).toBeCloseTo(100, 10);
     expect(hasil.butirTerhitung).toBe(2);
   });
 
@@ -107,9 +107,10 @@ describe('hitungNilaiResponden', () => {
       ...dasar,
       butir: dasar.butir.map((b, i) => ({ ...b, bobot: [20, 30, 50][i] as number })),
     };
-    expect(hitungNilaiResponden(responden('a', jawaban), kecil).nilai).toBe(
-      hitungNilaiResponden(responden('a', jawaban), besar).nilai,
-    );
+    const nilaiKecil = hitungNilaiResponden(responden('a', jawaban), kecil).nilai;
+    const nilaiBesar = hitungNilaiResponden(responden('a', jawaban), besar).nilai;
+    expect(nilaiKecil).not.toBe(null);
+    expect(Number(nilaiKecil)).toBeCloseTo(Number(nilaiBesar), 10);
   });
 
   it('mengabaikan kolom yang aturannya abaikan', () => {
@@ -136,7 +137,7 @@ describe('hitungNilaiResponden', () => {
       }),
       skema,
     );
-    expect(hasil.nilai).toBe(100);
+    expect(hasil.nilai).toBeCloseTo(100, 10);
     expect(hasil.butirTerhitung).toBe(3);
   });
 });
@@ -151,7 +152,7 @@ describe('hitungIndeksDimensi', () => {
       skemaLikert('abaikan'),
     );
     expect(hasil.map((d) => d.dimensi)).toEqual(['kemudahan', 'kepuasan']);
-    expect(hasil[0]?.indeks).toBe(100);
+    expect(hasil[0]?.indeks).toBeCloseTo(100, 10);
     expect(hasil[0]?.pasanganDihitung).toBe(4);
   });
 
@@ -160,7 +161,7 @@ describe('hitungIndeksDimensi', () => {
       [responden('a', { q1: 'Strongly disagree', q2: 'Strongly disagree', q3: 'Strongly disagree' })],
       skemaLikert('abaikan'),
     );
-    expect(hasil[0]?.indeks).toBe(20);
+    expect(hasil[0]?.indeks).toBeCloseTo(20, 10);
   });
 
   it('mengecilkan penyebut saat jawaban kosong diabaikan', () => {
@@ -168,7 +169,7 @@ describe('hitungIndeksDimensi', () => {
       [responden('a', { q1: 'Strongly agree', q2: '', q3: 'Strongly agree' })],
       skemaLikert('abaikan'),
     );
-    expect(hasil[0]?.indeks).toBe(100);
+    expect(hasil[0]?.indeks).toBeCloseTo(100, 10);
     expect(hasil[0]?.pasanganDihitung).toBe(1);
   });
 
@@ -178,7 +179,7 @@ describe('hitungIndeksDimensi', () => {
       skemaLikert('nol'),
     );
     // (5 + 0) / (5 + 5) x 100
-    expect(hasil[0]?.indeks).toBe(50);
+    expect(hasil[0]?.indeks).toBeCloseTo(50, 10);
     expect(hasil[0]?.pasanganDihitung).toBe(2);
   });
 
@@ -187,7 +188,7 @@ describe('hitungIndeksDimensi', () => {
       [responden('a', { q1: 'Strongly agree', q2: 'Maybe', q3: 'Strongly agree' })],
       skemaLikert('nol'),
     );
-    expect(hasil[0]?.indeks).toBe(100);
+    expect(hasil[0]?.indeks).toBeCloseTo(100, 10);
     expect(hasil[0]?.pasanganDihitung).toBe(1);
   });
 
@@ -197,7 +198,7 @@ describe('hitungIndeksDimensi', () => {
       skemaLikert('abaikan'),
     );
     expect(hasil[0]?.indeks).toBe(null);
-    expect(hasil[1]?.indeks).toBe(100);
+    expect(hasil[1]?.indeks).toBeCloseTo(100, 10);
   });
 });
 
@@ -224,7 +225,7 @@ describe('hitungIndeksKeseluruhan', () => {
       ],
       skema,
     );
-    expect(hasil).toBe(80);
+    expect(hasil).toBeCloseTo(80, 10);
   });
 
   it('mengembalikan null bila seluruh dimensi kosong', () => {
