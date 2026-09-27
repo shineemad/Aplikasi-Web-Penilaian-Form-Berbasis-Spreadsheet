@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import { hashPalsu } from './__fixtures__/hash';
+import { idResponden } from './normalisasi';
 import { bangunNilaiSesi } from './sesi';
 import type { Aturan, ButirSkema, JawabanResponden, Skema } from './tipe';
 
@@ -104,5 +106,41 @@ describe('bangunNilaiSesi', () => {
     const sesi = bangunNilaiSesi(META, [], SKEMA);
     expect(sesi.nilai.size).toBe(0);
     expect(sesi.identitas.size).toBe(0);
+    expect(sesi.dipadatkan.size).toBe(0);
+  });
+
+  it('mencatat id yang dipadatkan beserta jumlah baris asalnya', () => {
+    const sesi = bangunNilaiSesi(
+      META,
+      [
+        responden('a', { q1: 'Neutral', q2: 'Neutral' }),
+        responden('b', { q1: 'Agree', q2: 'Agree' }),
+        responden('a', { q1: 'Agree', q2: 'Agree' }),
+        responden('a', { q1: 'Strongly agree', q2: 'Strongly agree' }),
+      ],
+      SKEMA,
+    );
+    expect(sesi.dipadatkan.get('a')).toBe(3);
+    expect(sesi.dipadatkan.has('b')).toBe(false);
+  });
+
+  it('tidak mencatat pemadatan bila setiap id muncul sekali', () => {
+    const sesi = bangunNilaiSesi(
+      META,
+      [responden('a', { q1: 'Agree', q2: 'Agree' }), responden('b', { q1: 'Agree', q2: 'Agree' })],
+      SKEMA,
+    );
+    expect(sesi.dipadatkan.size).toBe(0);
+  });
+
+  it('membuat pemadatan baris-baris tanpa email terlihat', () => {
+    const idKosong = idResponden('', hashPalsu);
+    const ani = { ...responden(idKosong, { q1: 'Agree', q2: 'Agree' }), email: '', nama: 'Ani' };
+    const budi = { ...responden(idKosong, { q1: 'Neutral', q2: 'Neutral' }), email: '  ', nama: 'Budi' };
+    expect(idResponden('  ', hashPalsu)).toBe(idKosong);
+
+    const sesi = bangunNilaiSesi(META, [ani, budi], SKEMA);
+    expect(sesi.nilai.size).toBe(1);
+    expect(sesi.dipadatkan.get(idKosong)).toBe(2);
   });
 });

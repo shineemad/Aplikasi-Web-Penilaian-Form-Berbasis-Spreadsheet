@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { deteksiEmailKembar } from './duplikat';
+import { deteksiEmailKembar, deteksiEmailKosong } from './duplikat';
 import type { BarisMentah } from './duplikat';
 
 function baris(daftarEmail: string[]): BarisMentah[] {
@@ -52,5 +52,27 @@ describe('deteksiEmailKembar', () => {
 
   it('mengembalikan daftar kosong untuk masukan kosong', () => {
     expect(deteksiEmailKembar([])).toHaveLength(0);
+  });
+});
+
+describe('deteksiEmailKosong', () => {
+  it('melaporkan nomor baris yang emailnya kosong setelah dinormalisasi', () => {
+    expect(deteksiEmailKosong(baris(['a@x.com', '', '   ', 'b@x.com', '\t']))).toEqual([2, 3, 5]);
+  });
+
+  it('memakai nomor baris asal, bukan urutan dalam daftar', () => {
+    const mentah: BarisMentah[] = [
+      { nomorBaris: 2, email: 'a@x.com' },
+      { nomorBaris: 7, email: '' },
+    ];
+    expect(deteksiEmailKosong(mentah)).toEqual([7]);
+  });
+
+  it('tidak melaporkan apa pun bila seluruh email terisi', () => {
+    expect(deteksiEmailKosong(baris(['a@x.com', 'B@x.com']))).toEqual([]);
+  });
+
+  it('mengembalikan daftar kosong untuk masukan kosong', () => {
+    expect(deteksiEmailKosong([])).toEqual([]);
   });
 });

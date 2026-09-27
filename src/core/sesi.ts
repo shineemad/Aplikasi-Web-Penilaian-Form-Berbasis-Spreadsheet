@@ -25,8 +25,14 @@ export function bangunNilaiSesi(
   >();
   const kurang = new Map<string, number>();
   const peringatan = new Map<string, string[]>();
+  const dipadatkan = new Map<string, number>();
 
   for (const satu of responden) {
+    if (nilai.has(satu.id)) {
+      const sebelumnya = dipadatkan.get(satu.id);
+      dipadatkan.set(satu.id, sebelumnya === undefined ? 2 : sebelumnya + 1);
+    }
+
     const hasil = hitungNilaiResponden(satu, skema);
     nilai.set(satu.id, hasil.nilai);
     identitas.set(satu.id, { email: satu.email, nama: satu.nama, meta: satu.meta });
@@ -49,6 +55,7 @@ export function bangunNilaiSesi(
     identitas,
     kurang,
     peringatan,
+    dipadatkan,
   };
 }
 

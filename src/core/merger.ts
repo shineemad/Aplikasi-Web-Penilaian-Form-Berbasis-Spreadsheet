@@ -10,6 +10,11 @@ export interface NilaiSesi {
   kurang: Map<string, number>;
   /** respondenId -> peringatan yang muncul saat menilainya. */
   peringatan: Map<string, string[]>;
+  /**
+   * respondenId -> jumlah baris asal yang dipadatkan menjadi satu karena id-nya sama.
+   * Hanya baris terakhir yang dinilai. Tidak ada entri berarti id itu muncul sekali.
+   */
+  dipadatkan: Map<string, number>;
 }
 
 export interface Pembanding {

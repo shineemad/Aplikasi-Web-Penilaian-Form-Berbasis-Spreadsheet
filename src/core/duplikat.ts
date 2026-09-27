@@ -36,3 +36,15 @@ export function deteksiEmailKembar(baris: BarisMentah[]): KonflikEmail[] {
     return a.email.localeCompare(b.email);
   });
 }
+
+/**
+ * Nomor baris yang emailnya kosong. Baris seperti ini semuanya mendapat id yang
+ * sama, jadi tanpa laporan ini orang-orang berbeda tergabung diam-diam.
+ */
+export function deteksiEmailKosong(baris: BarisMentah[]): number[] {
+  const nomor: number[] = [];
+  for (const satu of baris) {
+    if (normalisasiEmail(satu.email) === '') nomor.push(satu.nomorBaris);
+  }
+  return nomor;
+}

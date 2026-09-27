@@ -24,7 +24,7 @@ function sesi(
     identitas.set(id, { email: data.email, nama: data.nama, meta: {} });
     if (data.kurang !== undefined) kurang.set(id, data.kurang);
   }
-  return { sesiId, namaSesi, skemaId, nilai, identitas, kurang, peringatan };
+  return { sesiId, namaSesi, skemaId, nilai, identitas, kurang, peringatan, dipadatkan: new Map() };
 }
 
 const PRE = sesi('s1', 'Pre-Test', 'skemaA', {

@@ -4,9 +4,11 @@ import {
   hitungIndeksKeseluruhan,
   hitungNilaiResponden,
 } from './aggregator';
+import { deteksiEmailKosong } from './duplikat';
 import { gabungkanSesi, ringkasProyek } from './merger';
 import type { NilaiSesi } from './merger';
 import { idResponden } from './normalisasi';
+import { bangunNilaiSesi } from './sesi';
 import { jawabanSeragam, skemaPostTest } from './__fixtures__/postTest';
 import { hashPalsu } from './__fixtures__/hash';
 import type { JawabanResponden } from './tipe';
@@ -104,6 +106,28 @@ describe('instrumen Post-Test nyata', () => {
 });
 
 describe('penggabungan Pre-Test dan Post-Test', () => {
+  it('tidak memasangkan orang-orang tanpa email antar sesi tanpa sinyal apa pun', () => {
+    const skema = skemaPostTest('abaikan');
+    const ani = { ...buatResponden('', 'Ani', jawabanSeragam('Strongly disagree')), meta: {} };
+    const budi = { ...buatResponden('  ', 'Budi', jawabanSeragam('Strongly Agree')), meta: {} };
+    const citra = { ...buatResponden('', 'Citra', jawabanSeragam('Neutral')), meta: {} };
+    // Ketiganya orang berbeda, tetapi email kosong membuat id mereka sama.
+    expect(budi.id).toBe(ani.id);
+    expect(citra.id).toBe(ani.id);
+
+    const pre = bangunNilaiSesi({ sesiId: 's1', namaSesi: 'Pre-Test' }, [ani], skema);
+    const post = bangunNilaiSesi({ sesiId: 's2', namaSesi: 'Post-Test' }, [budi, citra], skema);
+    gabungkanSesi([pre, post], { awal: 's1', akhir: 's2' });
+
+    expect(deteksiEmailKosong([{ nomorBaris: 2, email: ani.email }])).toEqual([2]);
+    expect(
+      deteksiEmailKosong([
+        { nomorBaris: 2, email: budi.email },
+        { nomorBaris: 3, email: citra.email },
+      ]),
+    ).toEqual([2, 3]);
+    expect(post.dipadatkan.get(ani.id)).toBe(2);
+  });
   it('mengenali orang yang sama meski emailnya beda huruf besar-kecil antar sesi', () => {
     const skema = skemaPostTest('abaikan');
 
@@ -119,6 +143,7 @@ describe('penggabungan Pre-Test dan Post-Test', () => {
       identitas: new Map([[diPre.id, { email: diPre.email, nama: diPre.nama, meta: {} }]]),
       kurang: new Map(),
       peringatan: new Map(),
+      dipadatkan: new Map(),
     };
     const post: NilaiSesi = {
       sesiId: 's2',
@@ -128,6 +153,7 @@ describe('penggabungan Pre-Test dan Post-Test', () => {
       identitas: new Map([[diPost.id, { email: diPost.email, nama: diPost.nama, meta: {} }]]),
       kurang: new Map(),
       peringatan: new Map(),
+      dipadatkan: new Map(),
     };
 
     const hasil = gabungkanSesi([pre, post], { awal: 's1', akhir: 's2' });
@@ -151,6 +177,7 @@ describe('penggabungan Pre-Test dan Post-Test', () => {
       identitas: new Map([[budi.id, { email: budi.email, nama: budi.nama, meta: {} }]]),
       kurang: new Map(),
       peringatan: new Map(),
+      dipadatkan: new Map(),
     };
     const post: NilaiSesi = {
       sesiId: 's2',
@@ -166,6 +193,7 @@ describe('penggabungan Pre-Test dan Post-Test', () => {
       ]),
       kurang: new Map(),
       peringatan: new Map(),
+      dipadatkan: new Map(),
     };
 
     const hasil = gabungkanSesi([pre, post], { awal: 's1', akhir: 's2' });
