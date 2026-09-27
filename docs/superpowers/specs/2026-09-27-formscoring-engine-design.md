@@ -284,6 +284,8 @@ Menuliskan penyebut sebagai $|T_d|$ dan bukan $n_r \cdot n_k$ disengaja: dengan 
 
 Berlaku untuk **mode indeks**. Pada mode peringkat, nilai ditampilkan apa adanya beserta posisi peringkatnya; kategori boleh diaktifkan admin bila dikehendaki.
 
+Kategori **tidak** muncul pada tabel gabungan lintas sesi (§8.4), hanya pada tabel ringkasan per dimensi. Indeks adalah agregat lintas responden, bukan angka milik satu orang, sehingga tidak ada satu pun angka pada baris seorang responden yang dapat dikategorikan tanpa menebak: nilai sesi terakhir, rata-rata seluruh sesi, dan tiap sesi sendiri-sendiri sama-sama masuk akal dan menghasilkan laporan berbeda. Bila kelak admin menginginkan kategori per orang, itu penambahan yang diputuskan sadar, bukan asumsi yang terlanjur tertanam. (Koreksi terhadap rumusan awal spec ini, diputuskan saat menyusun rencana "Reporter".)
+
 Dapat diatur admin. Nilai bawaan:
 
 | Rentang | Kategori      |
