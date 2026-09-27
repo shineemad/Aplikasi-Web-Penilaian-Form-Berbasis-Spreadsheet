@@ -1,4 +1,5 @@
-import { bacaBerkas } from './importerBerkas';
+import { bacaTeksCsv } from './importerBerkas';
+import type { PesanSumber } from './importerBerkas';
 import type { Impor } from './tipe';
 
 export interface BalasanAmbil {
@@ -14,6 +15,18 @@ const PETUNJUK_PUBLIKASI =
   'Buka spreadsheet-nya, lalu pilih File → Bagikan → Publikasikan ke web, ' +
   'pilih format CSV, dan salin tautan yang muncul di sana. ' +
   'Tautan "siapa saja yang memiliki link" tidak cukup — browser akan menolaknya.';
+
+const PESAN_TAUTAN: PesanSumber = {
+  bukanSpreadsheet: `Isi tautan ini tidak dapat dibaca sebagai data CSV. ${PETUNJUK_PUBLIKASI}`,
+  lembarKosong:
+    'Tautan berhasil dibuka tetapi lembar yang dipublikasikan tidak berisi satu sel pun. ' +
+    'Isi baris pertama lembar itu dengan nama kolom, lalu muat ulang tautannya.',
+  tanpaBarisData:
+    'Lembar yang dipublikasikan lewat tautan ini hanya berisi baris nama kolom dan tidak berisi satu baris data pun. ' +
+    'Periksa apakah tautan menunjuk lembar yang benar: Publikasikan ke web memilih satu lembar tertentu, ' +
+    'bukan seluruh spreadsheet.',
+  ulangi: 'lalu muat ulang tautannya (perubahan pada lembar yang dipublikasikan bisa perlu beberapa menit untuk muncul)',
+};
 
 export async function bacaTautan(url: string, ambil: FungsiAmbil): Promise<Impor> {
   let alamat: URL;
@@ -65,5 +78,5 @@ export async function bacaTautan(url: string, ambil: FungsiAmbil): Promise<Impor
     };
   }
 
-  return bacaBerkas(new TextEncoder().encode(teks).buffer as ArrayBuffer, 'data-dari-tautan.csv');
+  return bacaTeksCsv(teks, PESAN_TAUTAN);
 }

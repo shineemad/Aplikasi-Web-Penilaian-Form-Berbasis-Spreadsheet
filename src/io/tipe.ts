@@ -5,6 +5,8 @@ export interface HasilImpor {
   status: 'berhasil';
   header: string[];
   baris: BarisImpor[];
+  /** nomorBaris[i] adalah nomor baris asal baris[i] di spreadsheet, dihitung dari 1. */
+  nomorBaris: number[];
 }
 
 export interface GagalImpor {
