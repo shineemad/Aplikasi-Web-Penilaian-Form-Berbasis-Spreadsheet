@@ -4,6 +4,9 @@ import { tulisPdf } from './eksporPdf';
 
 const KEPALA = {
   judul: 'Literasi Qur\'ani Ateneo de Davao 2026',
+  // Tanggal = TENTANG kapan laporan ini (kepala), beda dari dibuatPada = KAPAN
+  // berkas dibuat (catatan kaki). Sengaja dibuat berbeda tanggal di sini.
+  tanggal: '27/09/2026',
   jumlahResponden: 2,
   dibuatPada: '28/09/2026 10:00',
   statusSesi: 'final',
@@ -42,6 +45,16 @@ describe('tulisPdf', () => {
     expect(isi.byteLength).toBeGreaterThan(0);
   });
 
+  it('menampilkan tanggal pada kepala laporan, bukan hanya di catatan kaki', () => {
+    // Temuan 1: tanggal pada §12.2 adalah tanggal laporan ini TENTANG apa,
+    // beda dari dibuatPada (kapan berkas dibuat) yang sudah ada di catatan kaki.
+    // Diperiksa lewat isi mentah berkas: jsPDF tidak mengompresi stream teks
+    // secara default, jadi teks kepala tercetak apa adanya di dalam byte-nya.
+    const isi = tulisPdf([tabelSempit(3)], KEPALA);
+    const teks = new TextDecoder('latin1').decode(isi);
+    expect(teks).toContain(KEPALA.tanggal);
+  });
+
   it('memecah 500 baris ke banyak halaman', () => {
     // Tabel panjang. Diuji sejak awal, bukan menjelang akhir.
     const { berkas, jumlahHalaman } = tulisPdf([tabelSempit(500)], KEPALA, { kembalikanInfo: true });
@@ -71,6 +84,24 @@ describe('tulisPdf', () => {
     expect(jumlahPotonganPerTabel[0]).toBeGreaterThan(1);
   });
 
+  it('mempertahankan orientasi masing-masing tabel saat dicampur dalam satu berkas', () => {
+    // Temuan 2: sebelumnya seluruh dokumen memakai satu orientasi agregat
+    // (`some(...) === 'lanskap'`), sehingga tabel potret ikut tercetak di
+    // halaman berbentuk lanskap. Di sini satu tabel lebar (-> lanskap) dan
+    // satu tabel sempit (-> potret) digabung dalam satu pemanggilan; bentuk
+    // halaman fisik yang sesungguhnya (bukan sekadar rencana) harus berbeda.
+    const lebar = tabelLebar(8);
+    const sempit = tabelSempit(3);
+    const { orientasiPerTabel, bentukHalaman } = tulisPdf([lebar, sempit], KEPALA, {
+      kembalikanInfo: true,
+    });
+
+    expect(orientasiPerTabel[0]).toBe('lanskap');
+    expect(orientasiPerTabel[1]).toBe('potret');
+    expect(bentukHalaman).toContain('lanskap');
+    expect(bentukHalaman).toContain('potret');
+  });
+
   it('menulis beberapa tabel dalam satu berkas', () => {
     const ringkasan: TabelTampil = {
       judul: 'Ringkasan Dimensi',
@@ -95,5 +126,18 @@ describe('tulisPdf', () => {
 
   it('menulis tabel tanpa baris data tanpa error', () => {
     expect(() => tulisPdf([tabelSempit(0)], KEPALA)).not.toThrow();
+  });
+
+  it('menghasilkan berkas PDF yang sah walau tidak ada satu pun tabel', () => {
+    // Temuan 3: tulisPdf([], KEPALA) tidak pernah diuji. Perilaku sekarang
+    // dipatok di sini: bukan error, melainkan berkas sah berisi kepala
+    // laporan dan catatan kaki saja pada satu halaman potret kosong.
+    const isi = tulisPdf([], KEPALA);
+    expect(awalanPdf(isi)).toBe('%PDF-');
+
+    const info = tulisPdf([], KEPALA, { kembalikanInfo: true });
+    expect(info.jumlahHalaman).toBe(1);
+    expect(info.orientasiPerTabel).toEqual([]);
+    expect(info.jumlahPotonganPerTabel).toEqual([]);
   });
 });

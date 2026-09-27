@@ -6,6 +6,8 @@ import type { MuatKolom } from '../core/tataLetak';
 
 export interface KepalaLaporan {
   judul: string;
+  /** Tanggal yang DILAPORKAN (proyek/sesi ini tentang kapan) — beda dari dibuatPada. */
+  tanggal: string;
   jumlahResponden: number;
   /** Disuntikkan supaya uji tidak bergantung pada jam mesin yang menjalankannya. */
   dibuatPada: string;
@@ -17,10 +19,16 @@ export interface InfoPdf {
   jumlahHalaman: number;
   orientasiPerTabel: ('potret' | 'lanskap')[];
   jumlahPotonganPerTabel: number[];
+  /** Bentuk fisik tiap halaman, dibaca dari dokumen sungguhan, bukan dari rencana. */
+  bentukHalaman: ('potret' | 'lanskap')[];
 }
 
 /** Perkiraan jumlah kolom yang muat, dipakai tataLetak untuk memutuskan orientasi. */
 const MUAT: MuatKolom = { potret: 6, lanskap: 10 };
+
+function orientasiJsPdf(orientasi: 'potret' | 'lanskap'): 'portrait' | 'landscape' {
+  return orientasi === 'lanskap' ? 'landscape' : 'portrait';
+}
 
 export function tulisPdf(tabel: TabelTampil[], kepala: KepalaLaporan): Uint8Array;
 export function tulisPdf(
@@ -37,13 +45,16 @@ export function tulisPdf(
     rencanakanHalaman(satu.kolom.length, satu.kolomIdentitas, MUAT),
   );
 
-  const adaLanskap = rencanaPerTabel.some((r) => r.orientasi === 'lanskap');
-  const doc = new jsPDF({ orientation: adaLanskap ? 'landscape' : 'portrait', unit: 'pt' });
+  // Halaman pertama memakai orientasi tabel pertama; setiap tabel berikutnya bisa
+  // punya orientasinya sendiri (lihat penambahan halaman di bawah).
+  const rencanaPertama = rencanaPerTabel[0];
+  const orientasiAwal = rencanaPertama === undefined ? 'potret' : rencanaPertama.orientasi;
+  const doc = new jsPDF({ orientation: orientasiJsPdf(orientasiAwal), unit: 'pt' });
 
   doc.setFontSize(14);
   doc.text(kepala.judul, 40, 40);
   doc.setFontSize(10);
-  doc.text(`Jumlah responden: ${kepala.jumlahResponden}`, 40, 58);
+  doc.text(`Tanggal: ${kepala.tanggal}    Jumlah responden: ${kepala.jumlahResponden}`, 40, 58);
 
   let mulaiY = 80;
 
@@ -51,6 +62,7 @@ export function tulisPdf(
     const satu = tabel[i];
     const rencana = rencanaPerTabel[i];
     if (satu === undefined || rencana === undefined) continue;
+    const orientasiHalaman = orientasiJsPdf(rencana.orientasi);
 
     for (const potongan of rencana.potongan) {
       autoTable(doc, {
@@ -63,18 +75,26 @@ export function tulisPdf(
         margin: { top: 40, bottom: 40 },
       });
       mulaiY = 40;
-      if (potongan !== rencana.potongan[rencana.potongan.length - 1]) doc.addPage();
+      if (potongan !== rencana.potongan[rencana.potongan.length - 1]) {
+        doc.addPage(undefined, orientasiHalaman);
+      }
     }
 
-    if (i < tabel.length - 1) {
-      doc.addPage();
+    // Halaman awal tabel berikutnya memakai orientasi tabel BERIKUTNYA, bukan tabel ini.
+    const rencanaBerikutnya = rencanaPerTabel[i + 1];
+    if (rencanaBerikutnya !== undefined) {
+      doc.addPage(undefined, orientasiJsPdf(rencanaBerikutnya.orientasi));
       mulaiY = 40;
     }
   }
 
   const jumlahHalaman = doc.getNumberOfPages();
+  const bentukHalaman: ('potret' | 'lanskap')[] = [];
   for (let h = 1; h <= jumlahHalaman; h += 1) {
     doc.setPage(h);
+    bentukHalaman.push(
+      doc.internal.pageSize.getWidth() > doc.internal.pageSize.getHeight() ? 'lanskap' : 'potret',
+    );
     doc.setFontSize(8);
     doc.text(
       `Dibuat ${kepala.dibuatPada} — status sesi: ${kepala.statusSesi} — halaman ${h}/${jumlahHalaman}`,
@@ -91,5 +111,6 @@ export function tulisPdf(
     jumlahHalaman,
     orientasiPerTabel: rencanaPerTabel.map((r) => r.orientasi),
     jumlahPotonganPerTabel: rencanaPerTabel.map((r) => r.potongan.length),
+    bentukHalaman,
   };
 }
