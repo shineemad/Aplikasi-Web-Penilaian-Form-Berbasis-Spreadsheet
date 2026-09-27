@@ -1,10 +1,15 @@
 import { normalisasiTeks } from './normalisasi';
-import type { JawabanResponden, Skema } from './tipe';
+import type { ButirSkema, JawabanResponden, Skema } from './tipe';
 
 export type Kelengkapan =
   | { status: 'lengkap' }
   | { status: 'kurang'; jumlahKosong: number }
   | { status: 'kosong' };
+
+/** Satu-satunya definisi kolom mana yang diperhitungkan dalam kelengkapan. */
+export function diisiResponden(butir: ButirSkema): boolean {
+  return butir.aturan.jenis === 'peta-opsi' || butir.aturan.jenis === 'kunci-jawaban';
+}
 
 export function hitungKelengkapan(
   responden: JawabanResponden,
@@ -14,7 +19,7 @@ export function hitungKelengkapan(
   let kosong = 0;
 
   for (const butir of skema.butir) {
-    if (butir.aturan.jenis !== 'peta-opsi' && butir.aturan.jenis !== 'kunci-jawaban') continue;
+    if (!diisiResponden(butir)) continue;
 
     diminta += 1;
     const jawaban = responden.jawaban[butir.kolomAsal];

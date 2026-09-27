@@ -1,5 +1,5 @@
 import { hitungNilaiResponden } from './aggregator';
-import { hitungKelengkapan } from './kelengkapan';
+import { diisiResponden, hitungKelengkapan } from './kelengkapan';
 import type { NilaiSesi } from './merger';
 import type { JawabanResponden, Skema } from './tipe';
 
@@ -55,7 +55,7 @@ export function bangunNilaiSesi(
 function jumlahKolomDiminta(skema: Skema): number {
   let jumlah = 0;
   for (const butir of skema.butir) {
-    if (butir.aturan.jenis === 'peta-opsi' || butir.aturan.jenis === 'kunci-jawaban') jumlah += 1;
+    if (diisiResponden(butir)) jumlah += 1;
   }
   return jumlah;
 }
