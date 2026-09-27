@@ -13,12 +13,15 @@ export interface BarisTerperingkat extends BarisPeringkat {
   peringkat: number | null;
 }
 
+/** Nilai dijumlah per butir sebagai pecahan, jadi dua nilai yang sama bisa beda di bit terakhir. */
+const TOLERANSI_SERI = 1e-9;
+
 function banding(a: BarisPeringkat, b: BarisPeringkat, bandingWaktu: BandingWaktu): number {
   if (a.nilai === null && b.nilai === null) return 0;
   if (a.nilai === null) return 1;
   if (b.nilai === null) return -1;
 
-  if (a.nilai !== b.nilai) return b.nilai - a.nilai;
+  if (Math.abs(a.nilai - b.nilai) > TOLERANSI_SERI) return b.nilai - a.nilai;
   if (a.jumlahTerjawab !== b.jumlahTerjawab) return b.jumlahTerjawab - a.jumlahTerjawab;
 
   if (a.waktuKirim === null && b.waktuKirim === null) return 0;
