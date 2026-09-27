@@ -99,4 +99,34 @@ describe('usulkanAturan berisik saat ragu', () => {
     if (usul.status !== 'tidak-yakin') throw new Error('seharusnya tidak yakin');
     expect(usul.contohNilai.length).toBeLessThanOrEqual(5);
   });
+
+  it('mendeteksi teks bebas berdasarkan jumlah opsi saja (> 20, panjang rata-rata pendek)', () => {
+    // Uji isolasi: banyak opsi berbeda (21), panjang rata-rata rendah (~1 karakter).
+    // Memastikan kondisi pertama OR (`bentukTerlihat.length > MAKS_OPSI_SEBELUM_TEKS_BEBAS`) bekerja sendiri.
+    // Pesan "tampak berupa teks bebas" hanya muncul di cabang teks bebas.
+    const jawaban: string[] = [];
+    for (let i = 0; i < 21; i++) {
+      jawaban.push(String.fromCharCode(97 + i)); // 'a' through 'u'
+    }
+    const usul = usulkanAturan(jawaban);
+    expect(usul.status).toBe('tidak-yakin');
+    if (usul.status !== 'tidak-yakin') return;
+    expect(usul.alasan).toContain('tampak berupa teks bebas');
+  });
+
+  it('mendeteksi teks bebas berdasarkan panjang rata-rata saja (< 20 opsi, rata-rata > 40 char)', () => {
+    // Uji isolasi: sedikit opsi berbeda (3), panjang rata-rata tinggi (~65 karakter).
+    // Memastikan kondisi kedua OR (`totalPanjang / totalTerisi > PANJANG_RATA_TEKS_BEBAS`) bekerja sendiri.
+    // Pesan "tampak berupa teks bebas" hanya muncul di cabang teks bebas, membedakannya dari
+    // cabang "terlalu sedikit opsi" atau "tidak cocok skala mana pun".
+    const jawaban = [
+      'Ini adalah kalimat pertama yang cukup panjang untuk menguji kondisi rata-rata karakter',
+      'Ini adalah kalimat kedua yang juga sangat panjang untuk menguji kondisi pemisahan',
+      'Ini adalah kalimat ketiga sama panjangnya untuk memastikan rata-rata di atas empat puluh karakter',
+    ];
+    const usul = usulkanAturan(jawaban);
+    expect(usul.status).toBe('tidak-yakin');
+    if (usul.status !== 'tidak-yakin') return;
+    expect(usul.alasan).toContain('tampak berupa teks bebas');
+  });
 });
