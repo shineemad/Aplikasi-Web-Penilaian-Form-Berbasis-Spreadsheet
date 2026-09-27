@@ -167,3 +167,70 @@ describe('finalkanSkema menolak rancangan yang belum diputuskan', () => {
     expect(hasil.skema.butir.map((b) => b.kolomAsal)).not.toContain('Age');
   });
 });
+
+describe('finalkanSkema memeriksa peran sebagaimana adanya sekarang', () => {
+  function rancanganDuaEmail(): RancanganSkema {
+    const rancangan = bangunRancangan(
+      's1',
+      ['Email Address', 'Email Orang Tua', 'q1'],
+      [{ 'Email Address': 'a@x.com', 'Email Orang Tua': 'b@x.com', q1: 'Agree' }],
+    );
+    rancangan.perlakuanKosong = 'abaikan';
+    for (const butir of rancangan.butir) {
+      butir.dimensi = 'd';
+      if (butir.aturan === null) butir.aturan = { jenis: 'abaikan' };
+    }
+    return rancangan;
+  }
+
+  it('menolak dua kolom email meski daftar rancu sudah dikosongkan', () => {
+    // Mengosongkan rancu adalah langkah wajar di layar; itu tidak boleh membuka
+    // jalan bagi bangunResponden untuk diam-diam memakai kolom email terakhir.
+    const rancangan = rancanganDuaEmail();
+    rancangan.peran.rancu = [];
+    for (const kolom of rancangan.peran.kolom) {
+      kolom.peran = kolom.header === 'q1' ? 'pertanyaan' : 'email';
+    }
+
+    const hasil = finalkanSkema(rancangan);
+    if (hasil.status !== 'belum-lengkap') throw new Error('seharusnya belum lengkap');
+    expect(hasil.masalah).toContainEqual({
+      jenis: 'peran-ganda',
+      peran: 'email',
+      header: ['Email Address', 'Email Orang Tua'],
+    });
+  });
+
+  it('menolak lebih dari satu kolom nama atau cap waktu, sekaligus', () => {
+    const rancangan = rancanganSiap();
+    for (const kolom of rancangan.peran.kolom) {
+      if (kolom.header === 'Age') kolom.peran = 'nama';
+      if (kolom.header === 'q11') kolom.peran = 'waktu';
+    }
+
+    const hasil = finalkanSkema(rancangan);
+    if (hasil.status !== 'belum-lengkap') throw new Error('seharusnya belum lengkap');
+    expect(hasil.masalah).toContainEqual({ jenis: 'peran-ganda', peran: 'nama', header: ['Name', 'Age'] });
+    expect(hasil.masalah).toContainEqual({ jenis: 'peran-ganda', peran: 'waktu', header: ['Timestamp', 'q11'] });
+  });
+
+  it('menolak kolom pertanyaan yang tidak punya butir', () => {
+    // Kolom identitas tidak dibuatkan butir. Bila admin mengubahnya menjadi
+    // pertanyaan, kolom itu akan hilang dari Skema tanpa pesan apa pun.
+    const rancangan = rancanganSiap();
+    const nama = rancangan.peran.kolom.find((k) => k.header === 'Name');
+    if (nama !== undefined) nama.peran = 'pertanyaan';
+
+    const hasil = finalkanSkema(rancangan);
+    if (hasil.status !== 'belum-lengkap') throw new Error('seharusnya belum lengkap');
+    expect(hasil.masalah).toContainEqual({ jenis: 'pertanyaan-tanpa-butir', header: 'Name' });
+  });
+
+  it('tetap menerima tepat satu email dan tanpa kolom nama maupun cap waktu', () => {
+    const rancangan = rancanganSiap();
+    for (const kolom of rancangan.peran.kolom) {
+      if (kolom.header === 'Name' || kolom.header === 'Timestamp') kolom.peran = 'meta';
+    }
+    expect(finalkanSkema(rancangan).status).toBe('siap');
+  });
+});
