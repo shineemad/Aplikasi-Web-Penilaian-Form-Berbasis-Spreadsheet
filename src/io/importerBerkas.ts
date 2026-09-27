@@ -31,7 +31,9 @@ export function bacaBerkas(isi: ArrayBuffer, namaBerkas: string): Impor {
 
   const barisHeader = matriks[0];
   if (barisHeader === undefined || barisHeader.length === 0) {
-    return gagalBukanSpreadsheet(namaBerkas);
+    // Berkas terbaca sah sebagai spreadsheet, hanya lembar pertamanya kosong —
+    // beda dari kasus "bukan spreadsheet" di atas, jadi pesannya pun harus beda.
+    return gagalLembarKosong(namaBerkas);
   }
 
   const header = barisHeader.map((sel) => String(sel).trim());
@@ -95,5 +97,14 @@ function gagalBukanSpreadsheet(namaBerkas: string): Impor {
       `Berkas "${namaBerkas}" tidak dapat dibaca sebagai spreadsheet. ` +
       'Format yang didukung adalah .xlsx, .xls, dan .csv. ' +
       'Bila berkasnya dari Google Sheets, unduh dulu lewat File → Unduh → Microsoft Excel (.xlsx).',
+  };
+}
+
+function gagalLembarKosong(namaBerkas: string): Impor {
+  return {
+    status: 'gagal',
+    pesan:
+      `Berkas "${namaBerkas}" berhasil dibaca tetapi lembar pertamanya kosong sama sekali. ` +
+      'Isi baris pertama dengan nama kolom, lalu unggah ulang.',
   };
 }

@@ -48,6 +48,12 @@ describe('bacaBerkas', () => {
   it('menolak berkas yang seluruhnya kosong', () => {
     const hasil = bacaBerkas(bukuKerja([]), 'data.xlsx');
     expect(hasil.status).toBe('gagal');
+    if (hasil.status === 'gagal') {
+      expect(hasil.pesan).toContain('data.xlsx');
+      expect(hasil.pesan).toContain('lembar pertamanya kosong');
+      expect(hasil.pesan).not.toContain('tidak dapat dibaca sebagai spreadsheet');
+      expect(hasil.pesan).not.toContain('Format yang didukung');
+    }
   });
 
   it('menolak header yang kosong dengan menyebut kolom keberapa', () => {
@@ -83,6 +89,18 @@ describe('bacaBerkas', () => {
       expect(hasil.pesan).toContain('catatan.txt');
       expect(hasil.pesan.toLowerCase()).toContain('.xlsx');
     }
+  });
+
+  it('membaca header dan baris dari csv', () => {
+    const teks = 'Email,Name,q1\na@x.com,Ani,Agree\nb@x.com,Budi,Neutral\n';
+    const isi = new TextEncoder().encode(teks).buffer;
+    const hasil = bacaBerkas(isi, 'sesuatu.csv');
+
+    expect(hasil.status).toBe('berhasil');
+    if (hasil.status !== 'berhasil') return;
+    expect(hasil.header).toEqual(['Email', 'Name', 'q1']);
+    expect(hasil.baris).toHaveLength(2);
+    expect(hasil.baris[0]).toEqual({ Email: 'a@x.com', Name: 'Ani', q1: 'Agree' });
   });
 
   it('membaca lembar pertama bila buku kerja punya beberapa lembar', () => {
