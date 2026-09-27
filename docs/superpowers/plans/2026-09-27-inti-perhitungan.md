@@ -87,6 +87,7 @@ Biarkan npm yang menuliskan nomor versinya. Jangan mengetik versi dengan tangan.
     "strict": true,
     "noUncheckedIndexedAccess": true,
     "verbatimModuleSyntax": true,
+    "esModuleInterop": true,
     "skipLibCheck": true,
     "noEmit": true,
     "types": ["node"]
@@ -96,6 +97,8 @@ Biarkan npm yang menuliskan nomor versinya. Jangan mengetik versi dengan tangan.
 ```
 
 `noUncheckedIndexedAccess` sengaja dinyalakan. Dengan ini `jawaban["Kolom X"]` bertipe `string | undefined`, sehingga kolom yang tidak ada wajib ditangani dan tidak bisa lolos diam-diam.
+
+`esModuleInterop` diperlukan karena penjaga kemurnian pada Tugas 2 memakai `import path from 'node:path'`, dan modul itu dideklarasikan dengan `export =`. Tanpa opsi ini, `npm run typecheck` akan gagal di Tugas 2.
 
 - [ ] **Langkah 4: Buat `vitest.config.ts`**
 
