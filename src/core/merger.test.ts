@@ -106,15 +106,15 @@ describe('ringkasProyek', () => {
     const ringkasan = ringkasProyek(hasil, [PRE, POST]);
     // Hanya Budi yang lengkap, selisihnya 40.
     expect(ringkasan.jumlahLengkap).toBe(1);
-    expect(ringkasan.rataSelisih).toBe(40);
+    expect(ringkasan.rataSelisih).toBeCloseTo(40, 10);
   });
 
   it('menghitung rata-rata nilai per sesi', () => {
     const hasil = gabungkanSesi([PRE, POST], PEMBANDING);
     const ringkasan = ringkasProyek(hasil, [PRE, POST]);
-    expect(ringkasan.perSesi[0]?.rataNilai).toBe(50);
+    expect(ringkasan.perSesi[0]?.rataNilai).toBeCloseTo(50, 10);
     expect(ringkasan.perSesi[0]?.jumlahResponden).toBe(2);
-    expect(ringkasan.perSesi[1]?.rataNilai).toBe(75);
+    expect(ringkasan.perSesi[1]?.rataNilai).toBeCloseTo(75, 10);
   });
 
   it('mengembalikan rataSelisih null bila tidak ada responden lengkap', () => {

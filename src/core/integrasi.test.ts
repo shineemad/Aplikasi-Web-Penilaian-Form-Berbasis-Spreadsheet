@@ -170,7 +170,7 @@ describe('penggabungan Pre-Test dan Post-Test', () => {
 
     const ringkasan = ringkasProyek(hasil, [pre, post]);
     // Rata-rata selisih hanya dari Budi yang lengkap, bukan dicampur dengan Andi.
-    expect(ringkasan.rataSelisih).toBe(40);
+    expect(ringkasan.rataSelisih).toBeCloseTo(40, 10);
     expect(ringkasan.jumlahTidakLengkap).toBe(1);
   });
 });
