@@ -46,9 +46,10 @@ function petakan(impor: HasilImpor) {
   }
   for (const butir of rancangan.butir) {
     butir.dimensi = dimensiButir(butir.kolomAsal);
-    // q11 memakai Yes/No/Maybe sehingga usulannya kosong. Keputusan yang
-    // ditiru di sini sama dengan skemaPostTest lama: perlakukan sebagai Likert,
-    // supaya periksaSkema tetap melaporkan "Maybe" sebagai opsi tak dikenal.
+    // Usulan kosong untuk q11 (Yes/No/Maybe) dan, pada sesi kecil, untuk kolom
+    // yang tidak memuat kelima opsi. Keputusan yang ditiru di sini sama dengan
+    // skemaPostTest lama: perlakukan sebagai Likert 5 poin, supaya periksaSkema
+    // tetap melaporkan "Maybe" sebagai opsi tak dikenal.
     if (butir.aturan === null) butir.aturan = LIKERT;
   }
 

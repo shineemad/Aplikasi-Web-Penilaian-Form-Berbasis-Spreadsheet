@@ -16,7 +16,7 @@ describe('usulkanAturan mengenali skala yang dikenal', () => {
   });
 
   it('mengusulkan peta-opsi untuk Likert 5 poin berbahasa Indonesia', () => {
-    const usul = usulkanAturan(['Sangat tidak setuju', 'Netral', 'Setuju', 'Sangat setuju']);
+    const usul = usulkanAturan(['Sangat tidak setuju', 'Tidak setuju', 'Netral', 'Setuju', 'Sangat setuju']);
     expect(usul.status).toBe('usul');
     if (usul.status !== 'usul') return;
     if (usul.aturan.jenis !== 'peta-opsi') return;
@@ -25,13 +25,19 @@ describe('usulkanAturan mengenali skala yang dikenal', () => {
 
   it('menyatukan opsi yang hanya beda huruf besar-kecil', () => {
     // Dua butir pada instrumen nyata menulis "Strongly Agree" berhuruf A besar.
-    const usul = usulkanAturan(['Strongly Agree', 'Strongly agree', 'Agree', 'Neutral']);
+    const usul = usulkanAturan([
+      'Strongly Agree',
+      'Strongly agree',
+      'Agree',
+      'Neutral',
+      'Disagree',
+      'Strongly disagree',
+    ]);
     expect(usul.status).toBe('usul');
   });
 
-  it('memakai skor maksimum skala, bukan jumlah opsi yang kebetulan muncul', () => {
-    // Bila skorMaks diambil dari data, kolom ini akan bernilai 100 untuk "Agree".
-    const usul = usulkanAturan(['Agree', 'Neutral', 'Disagree']);
+  it('memakai skor maksimum skala, bukan jumlah opsi yang kebetulan sering muncul', () => {
+    const usul = usulkanAturan(['Agree', 'Agree', 'Agree', 'Agree', 'Neutral', 'Disagree', 'Strongly agree', 'Strongly disagree']);
     expect(usul.status).toBe('usul');
     if (usul.status !== 'usul') return;
     if (usul.aturan.jenis !== 'peta-opsi') return;
@@ -40,7 +46,7 @@ describe('usulkanAturan mengenali skala yang dikenal', () => {
   });
 
   it('mengabaikan jawaban kosong saat mencocokkan skala', () => {
-    const usul = usulkanAturan(['Agree', '', '   ', 'Neutral', 'Disagree']);
+    const usul = usulkanAturan(['', ...LIKERT_INGGRIS, '   ']);
     expect(usul.status).toBe('usul');
   });
 
@@ -51,6 +57,28 @@ describe('usulkanAturan mengenali skala yang dikenal', () => {
 });
 
 describe('usulkanAturan berisik saat ragu', () => {
+  it('tidak menebak skala 5 poin bila sebagian opsinya tidak muncul', () => {
+    // Data tidak bisa membedakan "5 poin, dua opsi tak terpilih" dari skala 3 poin
+    // sungguhan. Menebak 5 membuat "Agree" bernilai 80, padahal pada skala 3 poin 100.
+    const usul = usulkanAturan(['Agree', 'Neutral', 'Disagree']);
+    expect(usul.status).toBe('tidak-yakin');
+    if (usul.status !== 'tidak-yakin') return;
+    expect(usul.alasan).toContain('5 poin');
+    expect(usul.alasan).toContain('3 poin');
+    expect(usul.alasan).toContain('strongly agree');
+    expect(usul.alasan).toContain('strongly disagree');
+    expect(usul.contohNilai).toEqual(['Agree', 'Disagree', 'Neutral']);
+  });
+
+  it('tidak menebak skala untuk Likert 4 poin tanpa netral', () => {
+    // Skala 4 poin tanpa netral lazim di penelitian Indonesia: 25/50/75/100, bukan 20/40/80/100.
+    const usul = usulkanAturan(['Sangat tidak setuju', 'Tidak setuju', 'Setuju', 'Sangat setuju']);
+    expect(usul.status).toBe('tidak-yakin');
+    if (usul.status !== 'tidak-yakin') return;
+    expect(usul.alasan).toContain('4 poin');
+    expect(usul.alasan).toContain('netral');
+    expect(usul.contohNilai).toHaveLength(4);
+  });
   it('tidak menebak untuk kolom Yes/No/Maybe', () => {
     // Butir 11 instrumen nyata. Memaksanya masuk skala Likert akan mengarang angka.
     const usul = usulkanAturan(['Yes', 'No', 'Maybe', 'Yes', 'Maybe']);

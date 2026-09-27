@@ -104,12 +104,27 @@ export function usulkanAturan(nilai: string[]): UsulAturan {
     const semuaDikenal = bentukTerlihat.every((bentuk) => skala.peta[bentuk] !== undefined);
     if (!semuaDikenal) continue;
 
+    // skorMaks tidak pernah diturunkan dari data, jadi skala yang tidak lengkap
+    // tidak bisa dibedakan dari skala yang lebih pendek. Admin yang memutuskan.
+    const hilang = Object.keys(skala.peta).filter((opsi) => !bentukTerlihat.includes(opsi));
+    if (hilang.length > 0) {
+      return {
+        status: 'tidak-yakin',
+        alasan:
+          `Seluruh jawaban pada kolom ini termasuk ${skala.nama}, tetapi opsi ` +
+          `${hilang.map((opsi) => `"${opsi}"`).join(', ')} tidak pernah dipilih. ` +
+          `Data tidak dapat membedakan skala ${skala.skorMaks} poin yang sebagian opsinya ` +
+          `tidak terpakai dari skala ${bentukTerlihat.length} poin sungguhan, padahal nilainya berbeda. ` +
+          `Periksa formulir aslinya: bila memang ${skala.skorMaks} opsi, pakai peta ${skala.skorMaks} poin; ` +
+          'bila tidak, susun petanya sendiri.',
+        contohNilai,
+      };
+    }
+
     return {
       status: 'usul',
       aturan: { jenis: 'peta-opsi', peta: skala.peta, skorMaks: skala.skorMaks },
-      alasan:
-        `Seluruh jawaban pada kolom ini termasuk ${skala.nama}. ` +
-        `Skor maksimum tetap ${skala.skorMaks} meski tidak semua opsinya muncul di data.`,
+      alasan: `Seluruh ${skala.skorMaks} opsi ${skala.nama} muncul pada kolom ini.`,
     };
   }
 

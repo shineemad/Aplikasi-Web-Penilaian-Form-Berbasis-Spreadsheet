@@ -7,7 +7,7 @@ import { bangunRancangan, finalkanSkema } from '../core/rancanganSkema';
 import type { RancanganSkema } from '../core/rancanganSkema';
 import { bangunNilaiSesi } from '../core/sesi';
 import { bacaBerkas } from './importerBerkas';
-import { bukuKerjaPostTest } from './__fixtures__/bukuKerja';
+import { bukuKerjaPostTest, bukuKerjaSesi } from './__fixtures__/bukuKerja';
 import { buatBandingWaktu, tebakFormatTanggal } from './waktu';
 
 function imporPostTest(jumlahBaris: number) {
@@ -67,6 +67,29 @@ describe('pemetaan kolom dari berkas nyata', () => {
     const q11 = rancangan.butir.find((b) => b.kolomAsal === 'q11');
     expect(q11?.aturan).toBe(null);
     expect(q11?.contohNilai.join(' ')).toContain('Maybe');
+  });
+
+  it('tidak menebak skala pada sesi kecil yang tidak memuat kelima opsi', () => {
+    // Tiga peserta hanya memakai tiga tingkat; skala 5 poin dan 3 poin sama-sama mungkin.
+    const impor = bacaBerkas(
+      bukuKerjaSesi(
+        [
+          { email: 'a@example.com', nama: 'A', tingkat: 'Disagree' },
+          { email: 'b@example.com', nama: 'B', tingkat: 'Neutral' },
+          { email: 'c@example.com', nama: 'C', tingkat: 'Agree' },
+        ],
+        'xlsx',
+      ),
+      'kecil.xlsx',
+    );
+    if (impor.status !== 'berhasil') throw new Error('impor seharusnya berhasil');
+    const rancangan = bangunRancangan('skemaA', impor.header, impor.baris);
+
+    const q1 = rancangan.butir.find((b) => b.kolomAsal === 'q1');
+    expect(q1?.aturan).toBe(null);
+    expect(q1?.alasan).toContain('5 poin');
+    expect(q1?.contohNilai).toHaveLength(3);
+    expect(rancangan.peran.kolom.find((k) => k.header === 'q1')?.peran).toBe('belum-diputuskan');
   });
 
   it('mengenali Email dan Name tanpa diberi tahu', () => {
