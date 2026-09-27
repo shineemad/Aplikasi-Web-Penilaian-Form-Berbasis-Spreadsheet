@@ -74,6 +74,39 @@ describe('ekspor dari berkas nyata', () => {
     }
   });
 
+  it('menghasilkan angka PDF yang identik dengan model tampilan', () => {
+    // Kriteria penerimaan 13 butir 5, separuh PDF. Bukan pembandingan sel demi
+    // sel (ekstraksi teks PDF dari byte mentah terlalu rapuh untuk itu, lihat
+    // Ruling pengontrol), melainkan sensor bertarget: nilai berkoma dari model
+    // harus muncul apa adanya, dan varian bertitiknya — yang akan muncul bila
+    // penulis PDF memformat ulang angka — tidak boleh muncul sama sekali.
+    const { gabungan } = siapkan(30);
+    const tabel = bangunTabelGabungan(gabungan, OPSI);
+
+    const kolomNilai = tabel.kolom.indexOf('Post-Test');
+    expect(kolomNilai).toBeGreaterThan(-1);
+    const nilaiBerkoma = [...new Set(tabel.baris.map((baris) => baris[kolomNilai]))].filter(
+      (nilai): nilai is string => nilai !== undefined && /^\d+,\d+$/.test(nilai),
+    );
+    expect(nilaiBerkoma.length).toBeGreaterThanOrEqual(2);
+
+    const berkas = tulisPdf([tabel], {
+      judul: 'Post-Test',
+      tanggal: '27/09/2026',
+      jumlahResponden: gabungan.baris.length,
+      dibuatPada: '28/09/2026 10:00',
+      statusSesi: 'final',
+    });
+    // jsPDF tidak mengompresi stream teks secara default (lihat uji "tanggal"
+    // di eksporPdf.test.ts), jadi teks tabel tercetak apa adanya di dalam byte-nya.
+    const teks = new TextDecoder('latin1').decode(berkas);
+
+    for (const nilai of nilaiBerkoma) {
+      expect(teks).toContain(nilai);
+      expect(teks).not.toContain(nilai.replace(',', '.'));
+    }
+  });
+
   it('tidak memuat email maupun nama pada mode anonim', () => {
     // Kriteria penerimaan 13 butir 6.
     const { gabungan } = siapkan(30);
