@@ -110,8 +110,26 @@ describe('dari berkas ke nilai tanpa kode uji yang ikut memetakan', () => {
     expect(petaan.responden).toHaveLength(500);
     expect(petaan.barisTanpaEmail).toHaveLength(0);
 
+    // peserta0 (baris pertama, i=0) menjawab TINGKAT[(i+n)%5] untuk tiap q1..q20
+    // kecuali q11 (sebagian baris diisi "Maybe" sehingga aturannya jadi abaikan,
+    // bukan Likert). Skor mentah 19 butir yang tersisa (Strongly disagree=1 ...
+    // Strongly agree=5) berjumlah 58 dari skor maksimum 5 per butir, sehingga
+    // nilai = (58/5) / 19 x 100 = 1160/19.
+    const peserta0 = petaan.responden[0];
+    if (peserta0 === undefined) throw new Error('baris pertama seharusnya ada');
+    const nilaiPeserta0 = hitungNilaiResponden(peserta0, skema);
+    expect(nilaiPeserta0.butirTerhitung).toBe(19);
+    expect(nilaiPeserta0.nilai).not.toBe(null);
+    expect(nilaiPeserta0.nilai).toBeCloseTo(1160 / 19, 8);
+
     const sesi = bangunNilaiSesi({ sesiId: 's1', namaSesi: 'Post-Test' }, petaan.responden, skema);
     expect(sesi.nilai.size).toBe(500);
+
+    // q11 beraturan abaikan tidak pernah menghasilkan peringatan (skorMaksAturan
+    // mengembalikan null untuknya sebelum jawabannya sempat diperiksa), dan
+    // seluruh butir lain selalu diisi varian penulisan yang dikenali skalanya —
+    // jadi tidak ada satu pun dari 500 responden yang membawa peringatan.
+    expect(sesi.peringatan.size).toBe(0);
   });
 
   it('memisahkan kolom meta dari kolom jawaban', () => {
@@ -169,5 +187,23 @@ describe('peringkat memakai cap waktu yang baru terpetakan', () => {
     expect(hasil).toHaveLength(20);
     expect(hasil[0]?.peringkat).toBe(1);
     for (const satu of hasil) expect(satu.peringkat).not.toBe(null);
+
+    // Bukan cuma "tidak ada peringkat null": urutannya harus benar-benar
+    // mengikuti nilai yang dihitung. Tiap baris tidak boleh lebih besar dari
+    // baris sebelumnya (non-increasing), dan baris berperingkat 1 harus
+    // benar-benar memegang nilai tertinggi yang muncul di data — diturunkan
+    // dari hasilnya sendiri saat dijalankan, bukan angka fixture yang di-hardcode.
+    const nilaiTerurut: number[] = [];
+    for (const satu of hasil) {
+      expect(satu.nilai).not.toBe(null);
+      if (satu.nilai !== null) nilaiTerurut.push(satu.nilai);
+    }
+    for (let i = 0; i + 1 < nilaiTerurut.length; i += 1) {
+      const sekarang = nilaiTerurut[i];
+      const berikut = nilaiTerurut[i + 1];
+      if (sekarang === undefined || berikut === undefined) continue;
+      expect(sekarang).toBeGreaterThanOrEqual(berikut);
+    }
+    expect(hasil[0]?.nilai).toBeCloseTo(Math.max(...nilaiTerurut), 8);
   });
 });
