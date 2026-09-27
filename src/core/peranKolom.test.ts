@@ -82,3 +82,32 @@ describe('tebakPeranKolom tidak tertipu teks pertanyaan', () => {
     expect(peta.rancu).toHaveLength(0);
   });
 });
+
+describe('tebakPeranKolom menolak tabrakan lintas peran', () => {
+  it('menandai header yang jadi calon dua peran sekaligus sebagai belum diputuskan', () => {
+    const peta = tebakPeranKolom(['Timestamp Email']);
+    expect(peta.kolom[0]?.peran).toBe('belum-diputuskan');
+
+    const rancuEmail = peta.rancu.find((r) => r.peran === 'email');
+    const rancuWaktu = peta.rancu.find((r) => r.peran === 'waktu');
+    expect(rancuEmail?.calon).toEqual(['Timestamp Email']);
+    expect(rancuWaktu?.calon).toEqual(['Timestamp Email']);
+  });
+
+  it('tidak mengganggu kolom lain yang tidak ikut bertabrakan', () => {
+    const peran = peranDari(['Timestamp Email', 'Nama Lengkap']);
+    expect(peran['Nama Lengkap']).toBe('nama');
+  });
+
+  it('tidak pernah menghasilkan keluaran yang saling bertentangan', () => {
+    const header = ['Email Address', 'Email Orang Tua', 'Timestamp Email'];
+    const peta = tebakPeranKolom(header);
+    const peran = peranDari(header);
+
+    for (const entri of peta.rancu) {
+      for (const calon of entri.calon) {
+        expect(peran[calon]).toBe('belum-diputuskan');
+      }
+    }
+  });
+});

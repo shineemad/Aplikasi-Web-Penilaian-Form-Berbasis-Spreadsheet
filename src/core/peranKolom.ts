@@ -55,14 +55,31 @@ function calonUntuk(peran: PeranIdentitas, header: string[]): string[] {
 }
 
 export function tebakPeranKolom(header: string[]): PetaPeran {
+  const daftarCalon = URUTAN.map((peran) => ({ peran, calon: calonUntuk(peran, header) }));
+
+  // Header yang jadi calon lebih dari satu peran sekaligus tidak boleh dipegang
+  // peran mana pun: memilih salah satunya berarti menebak kunci identitas.
+  const pengklaim = new Map<string, PeranIdentitas[]>();
+  for (const { peran, calon } of daftarCalon) {
+    for (const satu of calon) {
+      const daftar = pengklaim.get(satu);
+      if (daftar === undefined) pengklaim.set(satu, [peran]);
+      else daftar.push(peran);
+    }
+  }
+
+  const bertabrakanLintasPeran = (satu: string): boolean => {
+    const daftar = pengklaim.get(satu);
+    return daftar !== undefined && daftar.length > 1;
+  };
+
   const terpilih = new Map<string, KolomBerperan>();
   const rancu: { peran: PeranIdentitas; calon: string[] }[] = [];
 
-  for (const peran of URUTAN) {
-    const calon = calonUntuk(peran, header);
+  for (const { peran, calon } of daftarCalon) {
     if (calon.length === 0) continue;
 
-    if (calon.length > 1) {
+    if (calon.length > 1 || calon.some(bertabrakanLintasPeran)) {
       rancu.push({ peran, calon });
       continue;
     }
