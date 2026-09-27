@@ -31,6 +31,8 @@ export interface BarisGabungan {
   nilaiPerSesi: Record<string, number | null>;
   /** sesiId -> penanda keikutsertaan */
   statusPerSesi: Record<string, 'ikut' | 'tidak ikut' | `ikut:kurang ${number}`>;
+  /** sesiId -> peringatan saat menilai orang ini di sesi itu; kosong bila tidak ada atau tidak ikut */
+  peringatanPerSesi: Record<string, string[]>;
   /** null bila pembanding tidak ditetapkan atau salah satu nilainya tidak ada */
   selisih: number | null;
   /** 'lengkap' atau 'sebagian:<nama sesi yang diikuti, dipisah koma>' */
@@ -92,6 +94,7 @@ export function gabungkanSesi(
   const baris = semuaId.map((id) => {
     const nilaiPerSesi: Record<string, number | null> = {};
     const statusPerSesi: Record<string, 'ikut' | 'tidak ikut' | `ikut:kurang ${number}`> = {};
+    const peringatanPerSesi: Record<string, string[]> = {};
     const sesiDiikuti: string[] = [];
 
     let email = '';
@@ -105,8 +108,12 @@ export function gabungkanSesi(
       if (!ikut) {
         statusPerSesi[s.sesiId] = 'tidak ikut';
         nilaiPerSesi[s.sesiId] = null;
+        peringatanPerSesi[s.sesiId] = [];
         continue;
       }
+
+      const daftarPeringatan = s.peringatan.get(id);
+      peringatanPerSesi[s.sesiId] = daftarPeringatan === undefined ? [] : [...daftarPeringatan];
 
       sesiDiikuti.push(s.namaSesi);
       const nilai = s.nilai.get(id);
@@ -139,7 +146,17 @@ export function gabungkanSesi(
       }
     }
 
-    return { id, email, nama, meta, nilaiPerSesi, statusPerSesi, selisih, statusGabungan };
+    return {
+      id,
+      email,
+      nama,
+      meta,
+      nilaiPerSesi,
+      statusPerSesi,
+      peringatanPerSesi,
+      selisih,
+      statusGabungan,
+    };
   });
 
   return {

@@ -146,6 +146,27 @@ describe('gabungkanSesi', () => {
     expect(baris[0]?.statusPerSesi['s2']).toBe('ikut');
     expect(baris[0]?.statusGabungan).toBe('lengkap');
   });
+
+  it('membawa peringatan per responden sampai ke baris gabungan, per sesi', () => {
+    const preBudi = sesi('s1', 'Pre-Test', 'skemaA', {
+      budi: { nilai: null, email: 'budi@example.com', nama: 'Budi' },
+    });
+    preBudi.peringatan.set('budi', ['Butir 1: Opsi "Maybe" tidak ada di peta skala.']);
+    const postBudi = sesi('s2', 'Post-Test', 'skemaA', {
+      budi: { nilai: 80, email: 'budi@example.com', nama: 'Budi' },
+    });
+
+    const { baris } = gabungkanSesi([preBudi, postBudi], PEMBANDING);
+    expect(baris[0]?.peringatanPerSesi['s1']).toEqual(['Butir 1: Opsi "Maybe" tidak ada di peta skala.']);
+    expect(baris[0]?.peringatanPerSesi['s2']).toEqual([]);
+  });
+
+  it('memberi daftar peringatan kosong untuk sesi yang tidak diikuti', () => {
+    const { baris } = gabungkanSesi([PRE, POST], PEMBANDING);
+    const andi = baris.find((b) => b.id === 'andi');
+    expect(andi?.peringatanPerSesi['s1']).toEqual([]);
+    expect(andi?.peringatanPerSesi['s2']).toEqual([]);
+  });
 });
 
 describe('ringkasProyek', () => {
