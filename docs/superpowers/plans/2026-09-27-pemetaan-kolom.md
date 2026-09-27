@@ -1973,12 +1973,18 @@ git commit -m "test(io): pemetaan kolom dari berkas nyata sampai peringkat"
 
 - [ ] **Langkah 4: Buang pembantu `keResponden` dari uji lama**
 
-Buka `src/io/alurLengkap.test.ts`. Hapus fungsi `keResponden` beserta konstanta `KOLOM_META` yang hanya dipakainya, lalu ganti setiap pemanggilan `keResponden(impor.baris)` dengan jalur sungguhan.
+Buka `src/io/alurLengkap.test.ts`. Hapus fungsi `keResponden` beserta konstanta `KOLOM_META` yang hanya dipakainya, lalu ganti seluruh **sepuluh** pemanggilannya dengan jalur sungguhan.
+
+Dua hal yang membuat penggantian ini tidak sepele, keduanya sudah diperiksa saat pemindaian pra-eksekusi:
+
+**Pertama, `petakan` butuh seluruh `HasilImpor`, bukan hanya `.baris`,** karena ia memerlukan `header` dan `nomorBaris`. Beberapa pemanggilan menuliskan `keResponden(berhasil(bacaBerkas(...)).baris)` secara sebaris — ubah menjadi `petakan(berhasil(bacaBerkas(...)))`. Pembantu `berhasil()` yang sudah ada di berkas itu sudah mengembalikan `HasilImpor`.
+
+**Kedua, butir yang belum diputuskan WAJIB diberi aturan Likert, bukan `abaikan`.** Ini penting dan mudah salah. Uji `menahan penyimpanan skema karena butir Yes/No/Maybe belum diputuskan` bersandar pada `periksaSkema` yang melaporkan `Maybe` sebagai opsi tak dikenal pada `q11`. Kolom beraturan `abaikan` dilewati `periksaSkema`, sehingga memberi q11 aturan `abaikan` akan membuat uji itu diam-diam berhenti menguji apa pun. `skemaPostTest()` yang lama memberi LIKERT kepada **seluruh** 20 butir; `petakan` harus melakukan hal yang sama.
 
 Tambahkan pembantu berikut di dekat puncak berkas, setelah blok `import`:
 
 ```ts
-function petakan(impor: { header: string[]; baris: Record<string, string>[]; nomorBaris: number[] }) {
+function petakan(impor: HasilImpor) {
   const rancangan = bangunRancangan('skemaPostTest', impor.header, impor.baris);
   rancangan.perlakuanKosong = 'abaikan';
 
@@ -1988,7 +1994,10 @@ function petakan(impor: { header: string[]; baris: Record<string, string>[]; nom
   }
   for (const butir of rancangan.butir) {
     butir.dimensi = dimensiButir(butir.kolomAsal);
-    if (butir.aturan === null) butir.aturan = { jenis: 'abaikan' };
+    // q11 memakai Yes/No/Maybe sehingga usulannya kosong. Keputusan yang
+    // ditiru di sini sama dengan skemaPostTest lama: perlakukan sebagai Likert,
+    // supaya periksaSkema tetap melaporkan "Maybe" sebagai opsi tak dikenal.
+    if (butir.aturan === null) butir.aturan = LIKERT;
   }
 
   const final = finalkanSkema(rancangan);
@@ -1999,7 +2008,25 @@ function petakan(impor: { header: string[]; baris: Record<string, string>[]; nom
 }
 ```
 
-`dimensiButir` dibaca dari tabel `DIMENSI` yang sudah ada di berkas itu, sehingga pengelompokannya tidak ditulis dua kali:
+`LIKERT` adalah konstanta `Aturan` yang sudah ada di berkas itu dan dipakai `skemaPostTest`. `dimensiButir` dibaca dari tabel `DIMENSI` yang juga sudah ada di sana, sehingga pengelompokannya tidak ditulis dua kali:
+
+```ts
+function dimensiButir(kolomAsal: string): string {
+  const nomor = Number(kolomAsal.replace('q', ''));
+  let batas = 0;
+  for (const { dimensi, jumlah } of DIMENSI) {
+    batas += jumlah;
+    if (nomor <= batas) return dimensi;
+  }
+  return 'lainnya';
+}
+```
+
+Setelah seluruh pemanggilan berpindah, `skemaPostTest()` mungkin tidak lagi terpakai. Bila memang begitu, hapus juga — fungsi yang menganggur akan membingungkan pembaca berikutnya. Jangan hapus `LIKERT` maupun `DIMENSI`; keduanya masih dipakai.
+
+Tambahkan impor yang diperlukan dari `../core/rancanganSkema` dan `../core/bangunResponden`.
+
+**Jangan mengubah satu pun assertion di berkas itu.** Nilainya harus tetap sama persis. Penggantian ini aman menurut pembacaan kode: `skorJawaban` menormalisasi kedua sisi (`normalisasiTeks(opsi) === bersih` pada `src/core/scorer.ts`), sehingga peta berhuruf kapital milik `skemaPostTest` dan peta ternormalisasi milik `usulkanAturan` menghasilkan skor yang sama. Bila ternyata ada angka yang berubah, artinya jalur pemetaan sungguhan berbeda dari pemetaan versi uji — itu temuan yang wajib dilaporkan, bukan angka yang boleh disesuaikan.
 
 ```ts
 function dimensiButir(kolomAsal: string): string {
