@@ -40,6 +40,21 @@ describe('tebakFormatTanggal', () => {
   it('mengaku tidak tahu untuk daftar kosong', () => {
     expect(tebakFormatTanggal([]).status).toBe('rancu');
   });
+
+  it('tidak menyuruh memilih format bila tidak ada satu pun cap waktu yang terbaca', () => {
+    // Memilih format di sini tidak menolong: setelahnya seluruh cap waktu tetap
+    // tak terbaca dan semuanya jadi seri.
+    const hasil = tebakFormatTanggal(['bukan tanggal', '', '3/4/2026 9:00:00 PM']);
+    expect(hasil.status).toBe('rancu');
+    expect(hasil.alasan.toLowerCase()).toContain('tidak ada satu pun');
+    expect(hasil.alasan).not.toContain('12 ke bawah');
+    expect(hasil.alasan).not.toContain('Pilih sendiri format');
+  });
+
+  it('memakai pesan "12 ke bawah" hanya bila memang ada tanggal yang terbaca', () => {
+    const hasil = tebakFormatTanggal(['3/4/2026 08:00:00']);
+    expect(hasil.alasan).toContain('12 ke bawah');
+  });
 });
 
 describe('buatBandingWaktu', () => {
@@ -79,5 +94,11 @@ describe('buatBandingWaktu', () => {
 
   it('menerima cap waktu tanpa detik', () => {
     expect(bandingDMY('3/4/2026 08:00', '3/4/2026 09:00')).toBeLessThan(0);
+  });
+
+  it('tidak membaca jam 9 malam sebagai jam 9 pagi', () => {
+    // Sisa " PM" yang diabaikan diam-diam akan menaruh kiriman sore sebelum kiriman pagi.
+    expect(bandingDMY('3/4/2026 10:00:00', '3/4/2026 9:00:00 PM')).toBeLessThan(0);
+    expect(bandingDMY('3/4/2026 9:00:00 PM', 'bukan tanggal')).toBe(0);
   });
 });

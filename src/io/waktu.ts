@@ -15,7 +15,8 @@ interface Bagian {
   detik: number;
 }
 
-const POLA = /^(\d{1,2})[/-](\d{1,2})[/-](\d{4})[ ,]+(\d{1,2}):(\d{2})(?::(\d{2}))?/;
+// Berjangkar di kedua ujung: sisa seperti " PM" yang diabaikan akan membaca 21:00 sebagai 09:00.
+const POLA = /^(\d{1,2})[/-](\d{1,2})[/-](\d{4})[ ,]+(\d{1,2}):(\d{2})(?::(\d{2}))?$/;
 
 function uraikan(capWaktu: string): Bagian | null {
   const cocok = POLA.exec(capWaktu.trim());
@@ -49,13 +50,27 @@ const PETUNJUK =
 export function tebakFormatTanggal(capWaktu: string[]): HasilTebakFormat {
   let buktiDMY = false;
   let buktiMDY = false;
+  let adaTerbaca = false;
 
   for (const satu of capWaktu) {
     const bagian = uraikan(satu);
     if (bagian === null) continue;
 
+    adaTerbaca = true;
     if (bagian.pertama > 12) buktiDMY = true;
     if (bagian.kedua > 12) buktiMDY = true;
+  }
+
+  if (!adaTerbaca) {
+    return {
+      status: 'rancu',
+      alasan:
+        'Tidak ada satu pun isi kolom ini yang terbaca sebagai cap waktu ' +
+        '(bentuk yang dikenali: 25/4/2026 08:00:00, tanpa AM/PM), jadi memilih format ' +
+        'tanggal tidak akan menolong. Periksa apakah kolom ini memang kolom cap waktu; ' +
+        'bila bukan, ubah perannya. Selama belum terbaca, seri peringkat tidak dipecah ' +
+        'berdasarkan waktu kirim.',
+    };
   }
 
   if (buktiDMY && buktiMDY) {
