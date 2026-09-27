@@ -1,17 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import { hitungIndeksDimensi } from '../core/aggregator';
+import { bangunResponden } from '../core/bangunResponden';
 import { deteksiEmailKembar, deteksiEmailKosong } from '../core/duplikat';
 import type { BarisMentah } from '../core/duplikat';
 import { hashPalsu } from '../core/__fixtures__/hash';
 import { gabungkanSesi, ringkasProyek } from '../core/merger';
 import { idResponden } from '../core/normalisasi';
 import { periksaSkema } from '../core/periksaSkema';
+import { bangunRancangan, finalkanSkema } from '../core/rancanganSkema';
 import { bangunNilaiSesi } from '../core/sesi';
-import type { RespondenSesi } from '../core/sesi';
-import type { Aturan, ButirSkema, Skema } from '../core/tipe';
+import type { Aturan } from '../core/tipe';
 import { bacaBerkas } from './importerBerkas';
 import { bukuKerjaPostTest, bukuKerjaSesi } from './__fixtures__/bukuKerja';
-import type { BarisImpor, HasilImpor, Impor } from './tipe';
+import type { HasilImpor, Impor } from './tipe';
 
 // Kunci ditulis satu bentuk saja; berkasnya memuat "Strongly Agree", "strongly  agree",
 // "AGREE", " neutral", dan seterusnya. Semuanya harus cocok lewat normalisasi.
@@ -35,36 +36,37 @@ const DIMENSI = [
   { dimensi: 'kepuasan', jumlah: 3 },
 ];
 
-function skemaPostTest(): Skema {
-  const butir: ButirSkema[] = [];
-  let nomor = 1;
-  for (const { dimensi, jumlah } of DIMENSI) {
-    for (let i = 0; i < jumlah; i += 1) {
-      butir.push({ kolomAsal: `q${nomor}`, label: `Butir ${nomor}`, dimensi, aturan: LIKERT, bobot: 1 });
-      nomor += 1;
-    }
+function petakan(impor: HasilImpor) {
+  const rancangan = bangunRancangan('skemaPostTest', impor.header, impor.baris);
+  rancangan.perlakuanKosong = 'abaikan';
+
+  for (const kolom of rancangan.peran.kolom) {
+    if (kolom.peran !== 'belum-diputuskan') continue;
+    kolom.peran = kolom.header.startsWith('q') ? 'pertanyaan' : 'meta';
   }
-  return { skemaId: 'postTest', perlakuanKosong: 'abaikan', butir };
+  for (const butir of rancangan.butir) {
+    butir.dimensi = dimensiButir(butir.kolomAsal);
+    // q11 memakai Yes/No/Maybe sehingga usulannya kosong. Keputusan yang
+    // ditiru di sini sama dengan skemaPostTest lama: perlakukan sebagai Likert,
+    // supaya periksaSkema tetap melaporkan "Maybe" sebagai opsi tak dikenal.
+    if (butir.aturan === null) butir.aturan = LIKERT;
+  }
+
+  const final = finalkanSkema(rancangan);
+  if (final.status !== 'siap') throw new Error('skema seharusnya siap');
+
+  const petaan = bangunResponden(impor.baris, impor.nomorBaris, rancangan.peran, final.skema, hashPalsu);
+  return { skema: final.skema, responden: petaan.responden, petaan };
 }
 
-const KOLOM_META = ['Age', 'Gender'];
-
-function keResponden(baris: BarisImpor[]): RespondenSesi[] {
-  return baris.map((satu) => {
-    const email = satu['Email'] === undefined ? '' : satu['Email'];
-    const nama = satu['Name'] === undefined || satu['Name'] === '' ? null : satu['Name'];
-    const meta: Record<string, string> = {};
-    for (const kolom of KOLOM_META) {
-      const nilai = satu[kolom];
-      if (nilai !== undefined) meta[kolom] = nilai;
-    }
-    const jawaban: Record<string, string> = {};
-    for (const [kolom, nilai] of Object.entries(satu)) {
-      if (kolom === 'Email' || kolom === 'Name' || KOLOM_META.includes(kolom)) continue;
-      jawaban[kolom] = nilai;
-    }
-    return { id: idResponden(email, hashPalsu), email, nama, jawaban, meta };
-  });
+function dimensiButir(kolomAsal: string): string {
+  const nomor = Number(kolomAsal.replace('q', ''));
+  let batas = 0;
+  for (const { dimensi, jumlah } of DIMENSI) {
+    batas += jumlah;
+    if (nomor <= batas) return dimensi;
+  }
+  return 'lainnya';
 }
 
 function berhasil(impor: Impor): HasilImpor {
@@ -88,11 +90,11 @@ describe('alur berkas ke nilai', () => {
 
     expect(impor.baris).toHaveLength(500);
 
-    const responden = keResponden(impor.baris);
+    const { skema, responden } = petakan(impor);
     const idUnik = new Set(responden.map((r) => r.id));
     expect(idUnik.size).toBe(500);
 
-    const sesi = bangunNilaiSesi({ sesiId: 's1', namaSesi: 'Post-Test' }, responden, skemaPostTest());
+    const sesi = bangunNilaiSesi({ sesiId: 's1', namaSesi: 'Post-Test' }, responden, skema);
     expect(sesi.nilai.size).toBe(500);
     // Hanya baris ber-"Maybe" (i % 3 === 0, i = 0..498) yang boleh berperingatan:
     // floor(499 / 3) + 1 = 167. Ragam huruf besar-kecil dan spasi tidak boleh menambahnya.
@@ -103,7 +105,8 @@ describe('alur berkas ke nilai', () => {
     const impor = bacaBerkas(bukuKerjaPostTest(30), 'post-test.xlsx');
     if (impor.status !== 'berhasil') throw new Error('impor seharusnya berhasil');
 
-    const hasil = periksaSkema(skemaPostTest(), keResponden(impor.baris));
+    const { skema, responden } = petakan(impor);
+    const hasil = periksaSkema(skema, responden);
     expect(hasil.bolehDisimpan).toBe(false);
     // Satu-satunya masalah adalah q11; ragam penulisan butir lain cocok lewat normalisasi.
     expect(hasil.masalah).toHaveLength(1);
@@ -122,8 +125,8 @@ describe('alur berkas ke nilai', () => {
     const impor = bacaBerkas(bukuKerjaPostTest(10), 'post-test.xlsx');
     if (impor.status !== 'berhasil') throw new Error('impor seharusnya berhasil');
 
-    const responden = keResponden(impor.baris);
-    const sesi = bangunNilaiSesi({ sesiId: 's1', namaSesi: 'Post-Test' }, responden, skemaPostTest());
+    const { skema, responden } = petakan(impor);
+    const sesi = bangunNilaiSesi({ sesiId: 's1', namaSesi: 'Post-Test' }, responden, skema);
     const { baris } = gabungkanSesi([sesi]);
 
     expect(baris).toHaveLength(10);
@@ -147,8 +150,6 @@ describe('alur berkas ke nilai', () => {
   });
 
   it('menggabungkan dua sesi dan hanya merata-ratakan selisih peserta lengkap', () => {
-    const skema = skemaPostTest();
-
     // Nilai = tingkat / 5 × 100 karena seluruh butir dijawab setingkat.
     const imporPre = berhasil(
       bacaBerkas(
@@ -182,8 +183,10 @@ describe('alur berkas ke nilai', () => {
     );
     expect(imporPost.nomorBaris).toEqual([2, 3, 5, 6]);
 
-    const pre = bangunNilaiSesi({ sesiId: 's1', namaSesi: 'Pre-Test' }, keResponden(imporPre.baris), skema);
-    const post = bangunNilaiSesi({ sesiId: 's2', namaSesi: 'Post-Test' }, keResponden(imporPost.baris), skema);
+    const { skema: skemaPre, responden: respondenPre } = petakan(imporPre);
+    const pre = bangunNilaiSesi({ sesiId: 's1', namaSesi: 'Pre-Test' }, respondenPre, skemaPre);
+    const { skema: skemaPost, responden: respondenPost } = petakan(imporPost);
+    const post = bangunNilaiSesi({ sesiId: 's2', namaSesi: 'Post-Test' }, respondenPost, skemaPost);
 
     const hasil = gabungkanSesi([pre, post], { awal: 's1', akhir: 's2' });
     // Budi, Siti, Andi, Dewi, Eko. Tujuh baris berarti email beda huruf gagal dipasangkan.
@@ -214,30 +217,25 @@ describe('alur berkas ke nilai', () => {
   });
 
   it('membawa peringatan Post-Test sampai ke baris gabungan', () => {
-    const skema = skemaPostTest();
     const peserta = { email: 'dewi@example.com', nama: 'Dewi', tingkat: 'Agree' as const };
-    const pre = bangunNilaiSesi(
-      { sesiId: 's1', namaSesi: 'Pre-Test' },
-      keResponden(berhasil(bacaBerkas(bukuKerjaSesi([peserta], 'xlsx'), 'pre.xlsx')).baris),
-      skema,
+    const { skema: skemaPre, responden: respondenPre } = petakan(
+      berhasil(bacaBerkas(bukuKerjaSesi([peserta], 'xlsx'), 'pre.xlsx')),
     );
-    const post = bangunNilaiSesi(
-      { sesiId: 's2', namaSesi: 'Post-Test' },
-      keResponden(
-        berhasil(bacaBerkas(bukuKerjaSesi([{ ...peserta, ganti: { q11: 'Maybe' } }], 'csv'), 'post.csv')).baris,
-      ),
-      skema,
+    const pre = bangunNilaiSesi({ sesiId: 's1', namaSesi: 'Pre-Test' }, respondenPre, skemaPre);
+    const { skema: skemaPost, responden: respondenPost } = petakan(
+      berhasil(bacaBerkas(bukuKerjaSesi([{ ...peserta, ganti: { q11: 'Maybe' } }], 'csv'), 'post.csv')),
     );
+    const post = bangunNilaiSesi({ sesiId: 's2', namaSesi: 'Post-Test' }, respondenPost, skemaPost);
 
     const [dewi] = gabungkanSesi([pre, post], { awal: 's1', akhir: 's2' }).baris;
     expect(dewi?.statusGabungan).toBe('lengkap');
     expect(dewi?.peringatanPerSesi['s1']).toEqual([]);
     expect(dewi?.peringatanPerSesi['s2']).toHaveLength(1);
-    expect(dewi?.peringatanPerSesi['s2']?.join(' ')).toContain('Butir 11');
+    // Label kini berasal dari header kolom asli ('q11'), seperti yang admin lihat di berkasnya sendiri.
+    expect(dewi?.peringatanPerSesi['s2']?.join(' ')).toContain('q11');
   });
 
   it('menandai orang-orang tanpa email di kedua sesi dengan nomor baris aslinya', () => {
-    const skema = skemaPostTest();
     const imporPre = berhasil(
       bacaBerkas(
         bukuKerjaSesi(
@@ -265,8 +263,10 @@ describe('alur berkas ke nilai', () => {
       ),
     );
 
-    const pre = bangunNilaiSesi({ sesiId: 's1', namaSesi: 'Pre-Test' }, keResponden(imporPre.baris), skema);
-    const post = bangunNilaiSesi({ sesiId: 's2', namaSesi: 'Post-Test' }, keResponden(imporPost.baris), skema);
+    const { skema: skemaPre, responden: respondenPre } = petakan(imporPre);
+    const pre = bangunNilaiSesi({ sesiId: 's1', namaSesi: 'Pre-Test' }, respondenPre, skemaPre);
+    const { skema: skemaPost, responden: respondenPost } = petakan(imporPost);
+    const post = bangunNilaiSesi({ sesiId: 's2', namaSesi: 'Post-Test' }, respondenPost, skemaPost);
     gabungkanSesi([pre, post], { awal: 's1', akhir: 's2' });
 
     // Fajar, Gita, dan Hana berbagi satu id. Sinyalnya harus ada, dan menunjuk baris yang benar.
@@ -279,7 +279,8 @@ describe('alur berkas ke nilai', () => {
     const impor = bacaBerkas(bukuKerjaPostTest(20), 'post-test.xlsx');
     if (impor.status !== 'berhasil') throw new Error('impor seharusnya berhasil');
 
-    const dimensi = hitungIndeksDimensi(keResponden(impor.baris), skemaPostTest());
+    const { skema, responden } = petakan(impor);
+    const dimensi = hitungIndeksDimensi(responden, skema);
     expect(dimensi).toHaveLength(5);
     for (const d of dimensi) {
       expect(d.indeks).not.toBe(null);
