@@ -8,6 +8,7 @@ import type { RancanganSkema } from '../core/rancanganSkema';
 import { bangunNilaiSesi } from '../core/sesi';
 import { bacaBerkas } from './importerBerkas';
 import { bukuKerjaPostTest, bukuKerjaSesi } from './__fixtures__/bukuKerja';
+import type { PesertaFixture } from './__fixtures__/bukuKerja';
 import { buatBandingWaktu, tebakFormatTanggal } from './waktu';
 
 function imporPostTest(jumlahBaris: number) {
@@ -175,7 +176,7 @@ describe('dari berkas ke nilai tanpa kode uji yang ikut memetakan', () => {
 });
 
 describe('peringkat memakai cap waktu yang baru terpetakan', () => {
-  it('mengurutkan dengan pemecah seri dari cap waktu berkas', () => {
+  it('mengurutkan dengan pemecah seri dari cap waktu sintetis (tangan, bukan hasil pemetaan)', () => {
     const capWaktu = ['25/4/2026 08:00:00', '25/4/2026 09:00:00', '26/4/2026 08:00:00'];
     const format = tebakFormatTanggal(capWaktu);
     expect(format.status).toBe('yakin');
@@ -192,6 +193,73 @@ describe('peringkat memakai cap waktu yang baru terpetakan', () => {
     );
 
     expect(hasil.map((h) => h.respondenId)).toEqual(['tertinggi', 'awal', 'telat']);
+  });
+
+  it('menjalankan jalur waktu sungguhan: peran waktu terdeteksi, waktuKirim terpetakan bangunResponden, format tertebak dari data, lalu memecah seri peringkat', () => {
+    // Dua peserta menjawab "Agree" di seluruh 20 butir sehingga nilai dan
+    // jumlahTerjawab keduanya identik; satu-satunya pembeda urutan adalah
+    // cap waktu kirim yang sungguhan dipetakan lewat bangunResponden, bukan
+    // larik tanggal yang ditulis tangan seperti pada uji di atas.
+    const peserta: PesertaFixture[] = [
+      { email: 'sd@example.com', nama: 'Sangat Tidak Setuju', tingkat: 'Strongly disagree', waktu: '5/6/2026 08:00:00' },
+      { email: 'd@example.com', nama: 'Tidak Setuju', tingkat: 'Disagree', waktu: '6/6/2026 08:00:00' },
+      { email: 'n@example.com', nama: 'Netral', tingkat: 'Neutral', waktu: '7/6/2026 08:00:00' },
+      // Hari > 12 pada dua baris ini adalah bukti nyata untuk tebakFormatTanggal.
+      { email: 'a1@example.com', nama: 'Setuju Awal', tingkat: 'Agree', waktu: '20/6/2026 08:00:00' },
+      { email: 'a2@example.com', nama: 'Setuju Telat', tingkat: 'Agree', waktu: '21/6/2026 08:00:00' },
+      { email: 'sa@example.com', nama: 'Sangat Setuju', tingkat: 'Strongly agree', waktu: '22/6/2026 08:00:00' },
+    ];
+
+    const impor = bacaBerkas(bukuKerjaSesi(peserta, 'xlsx'), 'sesi-waktu.xlsx');
+    if (impor.status !== 'berhasil') throw new Error('impor seharusnya berhasil');
+
+    const rancangan = putuskanSemuanya(bangunRancangan('skemaWaktu', impor.header, impor.baris));
+    // Peran 'waktu' pada kolom Timestamp harus tertebak sendiri oleh
+    // tebakPeranKolom, tanpa campur tangan putuskanSemuanya.
+    expect(rancangan.peran.kolom.find((k) => k.header === 'Timestamp')?.peran).toBe('waktu');
+
+    const final = finalkanSkema(rancangan);
+    if (final.status !== 'siap') throw new Error('skema seharusnya siap');
+
+    const petaan = bangunResponden(impor.baris, impor.nomorBaris, rancangan.peran, final.skema, hashPalsu);
+    expect(petaan.waktuKirim.every((satu) => satu !== null)).toBe(true);
+
+    const format = tebakFormatTanggal(petaan.waktuKirim.filter((satu): satu is string => satu !== null));
+    expect(format.status).toBe('yakin');
+    if (format.status !== 'yakin') return;
+    expect(format.format).toBe('DMY');
+
+    const banding = buatBandingWaktu(format.format);
+    const idKeNama = new Map(petaan.responden.map((r) => [r.id, r.nama]));
+
+    const baris = petaan.responden.map((satu, i) => {
+      const nilai = hitungNilaiResponden(satu, final.skema);
+      return {
+        respondenId: satu.id,
+        nilai: nilai.nilai,
+        jumlahTerjawab: nilai.butirTerhitung,
+        waktuKirim: petaan.waktuKirim[i] ?? null,
+      };
+    });
+
+    const hasil = urutkanPeringkat(baris, banding);
+
+    const awal = hasil.find((h) => idKeNama.get(h.respondenId) === 'Setuju Awal');
+    const telat = hasil.find((h) => idKeNama.get(h.respondenId) === 'Setuju Telat');
+    expect(awal?.nilai).toBeCloseTo(telat?.nilai ?? NaN, 8);
+    expect(awal?.jumlahTerjawab).toBe(telat?.jumlahTerjawab);
+    // Nilai dan jumlah terjawab sama persis; kalau peringkatnya tetap berbeda,
+    // pembedanya pasti cap waktu, bukan skor.
+    expect(awal?.peringkat).not.toBe(telat?.peringkat);
+
+    expect(hasil.map((h) => idKeNama.get(h.respondenId))).toEqual([
+      'Sangat Setuju',
+      'Setuju Awal',
+      'Setuju Telat',
+      'Netral',
+      'Tidak Setuju',
+      'Sangat Tidak Setuju',
+    ]);
   });
 
   it('memberi peringkat dari nilai sesi yang benar-benar dihitung', () => {

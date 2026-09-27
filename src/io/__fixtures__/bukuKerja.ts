@@ -65,6 +65,8 @@ export interface PesertaFixture {
   tingkat: Tingkat;
   /** Jawaban yang menggantikan tingkat pada butir tertentu, mis. { q11: 'Maybe' }. */
   ganti?: Record<string, string>;
+  /** Isi kolom Timestamp. Kolom itu hanya ada bila sedikitnya satu peserta mengisinya. */
+  waktu?: string;
 }
 
 /**
@@ -72,13 +74,16 @@ export interface PesertaFixture {
  * bahwa nomor baris asal tidak bergeser.
  */
 export function bukuKerjaSesi(peserta: (PesertaFixture | null)[], format: 'xlsx' | 'csv'): ArrayBuffer {
-  const data: string[][] = [headerPostTest()];
+  // Google Forms menaruh Timestamp sebagai kolom pertama.
+  const denganWaktu = peserta.some((satu) => satu !== null && satu.waktu !== undefined);
+  const data: string[][] = [denganWaktu ? ['Timestamp', ...headerPostTest()] : headerPostTest()];
   for (const satu of peserta) {
     if (satu === null) {
       data.push([]);
       continue;
     }
     const baris = [satu.email, satu.nama, '20', 'female'];
+    if (denganWaktu) baris.unshift(satu.waktu === undefined ? '' : satu.waktu);
     for (let n = 1; n <= 20; n += 1) {
       const pengganti = satu.ganti?.[`q${n}`];
       baris.push(pengganti === undefined ? tulisOpsi(satu.tingkat, n) : pengganti);
