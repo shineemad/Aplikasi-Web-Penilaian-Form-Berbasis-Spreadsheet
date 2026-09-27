@@ -49,6 +49,17 @@ function buangEscape(mentah: string): string {
   });
 }
 
+/**
+ * Seluruh byte berkas sebagai teks, termasuk bagian yang tidak pernah tercetak
+ * sebagai token `Tj`. Kamus metadata dokumen (`/Author`, `/Title`, `/Subject`)
+ * ada di antaranya: `doc.setProperties({ author: 'bocor@example.com' })`
+ * menaruh email itu di berkas tanpa menghasilkan satu token pun, sehingga
+ * pemeriksaan yang hanya membaca token tetap hijau meski berkasnya bocor.
+ */
+export function teksMentahPdf(berkas: Uint8Array): string {
+  return DEKODER.decode(berkas);
+}
+
 export function tokenTeksPdf(berkas: Uint8Array): string[] {
   const isi = DEKODER.decode(berkas);
   const token: string[] = [];

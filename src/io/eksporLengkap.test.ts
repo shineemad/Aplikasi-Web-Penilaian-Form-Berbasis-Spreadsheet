@@ -15,7 +15,7 @@ import { tulisExcel } from './eksporExcel';
 import { tulisPdf } from './eksporPdf';
 import { bacaBerkas } from './importerBerkas';
 import { bukuKerjaPostTest, bukuKerjaXlsx } from './__fixtures__/bukuKerja';
-import { hitungToken, tokenTeksPdf } from './__fixtures__/pdfTeks';
+import { hitungToken, teksMentahPdf, tokenTeksPdf } from './__fixtures__/pdfTeks';
 
 const OPSI = { desimal: 1, anonim: false, adaPembanding: false };
 
@@ -243,8 +243,18 @@ describe('ekspor dari berkas nyata', () => {
 
   it('tidak memuat email maupun nama pada mode anonim', () => {
     // Kriteria penerimaan 13 butir 6, pada kedua berkas ekspor. Sebelumnya
-    // hanya berkas Excel yang dibaca, sehingga kebocoran di PDF — termasuk
-    // yang masuk lewat kepala laporan atau catatan kaki — tidak tertangkap.
+    // hanya berkas Excel yang dibaca, sehingga kebocoran di PDF tidak
+    // tertangkap sama sekali.
+    //
+    // Sisi PDF diperiksa dua lapis, karena masing-masing buta pada hal yang
+    // berbeda:
+    //   1. token `Tj` — apa yang benar-benar TERCETAK, jadi bisa disebut per
+    //      sel; tetapi metadata dokumen tidak pernah menjadi token, sehingga
+    //      `setProperties({ author: '...' })` lolos begitu saja;
+    //   2. teks mentah berkas — menangkap metadata, tetapi tidak tahu sel mana
+    //      yang bocor.
+    // Lapis kedua memakai substring, bukan kesamaan persis, sebab nama bisa
+    // terbawa di dalam teks yang lebih panjang seperti "Responden: Peserta 3".
     const { gabungan } = siapkan(30);
     const tabel = bangunTabelGabungan(gabungan, { ...OPSI, anonim: true });
 
@@ -255,7 +265,6 @@ describe('ekspor dari berkas nyata', () => {
       .map((baris) => baris.nama)
       .filter((satu): satu is string => satu !== null && satu !== '');
     expect(nama.length).toBeGreaterThan(0);
-    const kumpulanNama = new Set(nama);
 
     const matriks = bacaLembar(tulisExcel([tabel]), tabel.judul);
     const seluruhTeks = matriks.map((baris) => baris.join(' ')).join(' ');
@@ -266,14 +275,30 @@ describe('ekspor dari berkas nyata', () => {
     expect(matriks[0]).not.toContain('Email');
     expect(matriks[0]).not.toContain('Nama');
 
-    const token = tokenTeksPdf(
-      tulisPdf([tabel], { ...KEPALA, jumlahResponden: gabungan.baris.length }),
-    );
+    const berkasPdf = tulisPdf([tabel], {
+      ...KEPALA,
+      jumlahResponden: gabungan.baris.length,
+    });
+
+    const token = tokenTeksPdf(berkasPdf);
     expect(token.filter((satu) => satu.includes('@'))).toEqual([]);
-    expect(token.filter((satu) => kumpulanNama.has(satu))).toEqual([]);
+    for (const satu of nama) {
+      expect(
+        token.some((satuToken) => satuToken.includes(satu)),
+        `token PDF memuat nama "${satu}"`,
+      ).toBe(false);
+    }
     expect(token).toContain('ID');
     expect(token).not.toContain('Email');
     expect(token).not.toContain('Nama');
+
+    // Indeks, bukan toContain: kegagalannya menyebut posisi alih-alih
+    // memuntahkan seluruh berkas PDF ke layar.
+    const mentah = teksMentahPdf(berkasPdf);
+    expect(mentah.indexOf('@'), 'byte berkas PDF memuat "@"').toBe(-1);
+    for (const satu of nama) {
+      expect(mentah.includes(satu), `byte berkas PDF memuat nama "${satu}"`).toBe(false);
+    }
   });
 
   it('mempertahankan tanda kosong sampai ke berkas', () => {
