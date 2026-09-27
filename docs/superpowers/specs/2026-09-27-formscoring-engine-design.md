@@ -148,7 +148,9 @@ Hasil impor mentah. **Tidak pernah diubah setelah impor.** Kunci barisnya adalah
 | `status_kelengkapan` | `lengkap` \| `kurang:N` \| `kosong`                                     |
 | `diimpor_pada`       | Cap waktu                                                               |
 
-`status_kelengkapan` dihitung terhadap kolom yang aturannya bukan `abaikan`: `lengkap` bila semuanya terisi, `kurang:N` bila ada $N$ kolom kosong, `kosong` bila seluruhnya kosong. Nilainya dihitung ulang setiap kali skema berubah, karena mengubah sebuah kolom menjadi `abaikan` dapat membuat baris yang tadinya kurang menjadi lengkap.
+`status_kelengkapan` dihitung terhadap kolom yang **diisi responden**, yaitu beraturan `peta-opsi` atau `kunci-jawaban`: `lengkap` bila semuanya terisi, `kurang:N` bila ada $N$ kolom kosong, `kosong` bila seluruhnya kosong. Nilainya dihitung ulang setiap kali skema berubah, karena mengubah sebuah kolom menjadi `abaikan` dapat membuat baris yang tadinya kurang menjadi lengkap.
+
+Kolom `manual` sengaja **tidak** ikut dihitung meskipun aturannya bukan `abaikan`. Kolom seperti itu diisi penilai, bukan responden, sehingga memasukkannya akan membuat setiap responden selalu berstatus `kurang` dan penandanya kehilangan arti. (Koreksi terhadap rumusan awal spec ini, diputuskan saat menyusun rencana "Dari Berkas Mentah ke Nilai".)
 
 `id` berupa hash, bukan email langsung, karena dua alasan: stabil saat impor ulang (orang yang sama selalu mendapat `id` yang sama), dan ekspor dapat dianonimkan cukup dengan membuang kolom `email` tanpa memutus relasi antar sheet.
 
