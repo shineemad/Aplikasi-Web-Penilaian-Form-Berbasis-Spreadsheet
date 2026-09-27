@@ -70,4 +70,35 @@ describe('tulisExcel', () => {
     expect(matriks).toHaveLength(501);
     expect(matriks[500]?.[0]).toBe('id499');
   });
+
+  it('memotong judul lebih dari 31 karakter menjadi tepat 31, dan lembarnya bisa dibaca dengan nama terpotong', () => {
+    const judulPanjang = 'Rekap Gabungan Sesi Pre-Test dan Post-Test Lengkap';
+    expect(judulPanjang.length).toBeGreaterThan(31);
+    const namaTerpotong = judulPanjang.slice(0, 31);
+    expect(namaTerpotong).toHaveLength(31);
+
+    const matriks = bacaLembar(tulisExcel([tabel({ judul: judulPanjang })]), namaTerpotong);
+    expect(matriks[0]).toEqual(['ID', 'Email', 'Pre-Test', 'Selisih']);
+  });
+
+  it('menolak dua tabel dengan judul sama persis, dan pesannya menyebut judul serta cara memperbaikinya', () => {
+    expect(() => tulisExcel([tabel(), tabel()])).toThrow('Rekap Gabungan');
+    expect(() => tulisExcel([tabel(), tabel()])).toThrow('judul yang berbeda');
+  });
+
+  it('menolak dua judul panjang berbeda yang bertabrakan hanya setelah dipotong 31 karakter', () => {
+    const awal31 = 'Rekap Gabungan Sesi Pre Post Te';
+    const judulA = `${awal31} Bagian Satu`;
+    const judulB = `${awal31} Bagian Dua`;
+    expect(judulA.slice(0, 31)).toBe(judulB.slice(0, 31));
+
+    expect(() => tulisExcel([tabel({ judul: judulA }), tabel({ judul: judulB })])).toThrow(judulB);
+    expect(() => tulisExcel([tabel({ judul: judulA }), tabel({ judul: judulB })])).toThrow(
+      'dipotong maksimal 31 karakter',
+    );
+  });
+
+  it('menolak larik tabel kosong, dan pesannya menyebutkan tidak ada tabel untuk ditulis', () => {
+    expect(() => tulisExcel([])).toThrow('tanpa satu tabel pun');
+  });
 });
