@@ -1048,6 +1048,7 @@ git commit -m "feat(core): bangunNilaiSesi menyatukan nilai, kelengkapan, dan pe
 
 **Berkas:**
 - Buat: `src/io/tipe.ts`
+- Buat: `src/io/__fixtures__/bukuKerja.ts`
 - Buat: `src/io/importerBerkas.ts`
 - Uji: `src/io/importerBerkas.test.ts`
 - Ubah: `package.json` (tambah `xlsx`)
@@ -1088,7 +1089,23 @@ export interface GagalImpor {
 export type Impor = HasilImpor | GagalImpor;
 ```
 
-- [ ] **Langkah 3: Tulis uji yang gagal**
+- [ ] **Langkah 3: Buat fixture buku kerja**
+
+Buat `src/io/__fixtures__/bukuKerja.ts`:
+
+```ts
+import * as XLSX from 'xlsx';
+
+/** Membangun buku kerja .xlsx di memori, untuk diumpankan ke importer. */
+export function bukuKerjaXlsx(data: string[][]): ArrayBuffer {
+  const lembar = XLSX.utils.aoa_to_sheet(data);
+  const buku = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(buku, lembar, 'Sheet1');
+  return XLSX.write(buku, { type: 'array', bookType: 'xlsx' }) as ArrayBuffer;
+}
+```
+
+- [ ] **Langkah 4: Tulis uji yang gagal**
 
 Buat `src/io/importerBerkas.test.ts`:
 
@@ -1096,13 +1113,7 @@ Buat `src/io/importerBerkas.test.ts`:
 import { describe, expect, it } from 'vitest';
 import * as XLSX from 'xlsx';
 import { bacaBerkas } from './importerBerkas';
-
-function bukuKerja(data: string[][]): ArrayBuffer {
-  const lembar = XLSX.utils.aoa_to_sheet(data);
-  const buku = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(buku, lembar, 'Sheet1');
-  return XLSX.write(buku, { type: 'array', bookType: 'xlsx' }) as ArrayBuffer;
-}
+import { bukuKerjaXlsx as bukuKerja } from './__fixtures__/bukuKerja';
 
 describe('bacaBerkas', () => {
   it('membaca header dan baris dari xlsx', () => {
@@ -1207,7 +1218,7 @@ describe('bacaBerkas', () => {
 });
 ```
 
-- [ ] **Langkah 4: Jalankan uji dan pastikan gagal**
+- [ ] **Langkah 5: Jalankan uji dan pastikan gagal**
 
 ```bash
 npm test
@@ -1215,7 +1226,7 @@ npm test
 
 Diharapkan: GAGAL dengan pesan bahwa modul `./importerBerkas` tidak ditemukan.
 
-- [ ] **Langkah 5: Tulis implementasi minimal**
+- [ ] **Langkah 6: Tulis implementasi minimal**
 
 Buat `src/io/importerBerkas.ts`:
 
@@ -1321,7 +1332,7 @@ function gagalBukanSpreadsheet(namaBerkas: string): Impor {
 }
 ```
 
-- [ ] **Langkah 6: Jalankan uji dan pastikan lulus**
+- [ ] **Langkah 7: Jalankan uji dan pastikan lulus**
 
 ```bash
 npm test
@@ -1329,7 +1340,7 @@ npm test
 
 Diharapkan: LULUS, seluruh uji sebelumnya plus 9 uji baru.
 
-- [ ] **Langkah 7: Jalankan pemeriksaan tipe**
+- [ ] **Langkah 8: Jalankan pemeriksaan tipe**
 
 ```bash
 npm run typecheck
@@ -1337,10 +1348,10 @@ npm run typecheck
 
 Diharapkan: tanpa keluaran, keluar dengan kode 0. Bila `tsconfig.json` masih `"include": ["src"]`, `src/io` sudah ikut terperiksa.
 
-- [ ] **Langkah 8: Commit**
+- [ ] **Langkah 9: Commit**
 
 ```bash
-git add package.json package-lock.json src/io/tipe.ts src/io/importerBerkas.ts src/io/importerBerkas.test.ts
+git add package.json package-lock.json src/io/tipe.ts src/io/__fixtures__/bukuKerja.ts src/io/importerBerkas.ts src/io/importerBerkas.test.ts
 git commit -m "feat(io): importer berkas xlsx, xls, dan csv"
 ```
 
@@ -1565,7 +1576,7 @@ git commit -m "feat(io): importer tautan published CSV dengan pesan yang mengaja
 ### Tugas 7: Uji integrasi berkas ke nilai
 
 **Berkas:**
-- Buat: `src/io/__fixtures__/bukuKerja.ts`
+- Ubah: `src/io/__fixtures__/bukuKerja.ts`
 - Uji: `src/io/alurLengkap.test.ts`
 
 **Antarmuka:**
@@ -1574,21 +1585,11 @@ git commit -m "feat(io): importer tautan published CSV dengan pesan yang mengaja
 
 Tugas-tugas sebelumnya menguji setiap potongan sendiri-sendiri. Tugas ini menjalankan seluruh jalur pada replika instrumen Post-Test nyata: sebuah buku kerja `.xlsx` dibangun di dalam uji, dibaca oleh importer, diperiksa skemanya, dinilai, lalu digabung — persis seperti yang akan dilakukan aplikasi nanti.
 
-- [ ] **Langkah 1: Buat fixture buku kerja**
+- [ ] **Langkah 1: Tambahkan pembangun Post-Test ke fixture yang sudah ada**
 
-Buat `src/io/__fixtures__/bukuKerja.ts`:
+Tambahkan ke `src/io/__fixtures__/bukuKerja.ts`, di bawah `bukuKerjaXlsx` yang dibuat Tugas 5:
 
 ```ts
-import * as XLSX from 'xlsx';
-
-/** Membangun buku kerja .xlsx di memori, untuk diumpankan ke importer. */
-export function bukuKerjaXlsx(data: string[][]): ArrayBuffer {
-  const lembar = XLSX.utils.aoa_to_sheet(data);
-  const buku = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(buku, lembar, 'Sheet1');
-  return XLSX.write(buku, { type: 'array', bookType: 'xlsx' }) as ArrayBuffer;
-}
-
 const OPSI = ['Strongly disagree', 'Disagree', 'Neutral', 'Agree', 'Strongly Agree'];
 
 /**
@@ -1819,7 +1820,6 @@ Diharapkan: tanpa keluaran, keluar dengan kode 0.
 git add src/io/__fixtures__/bukuKerja.ts src/io/alurLengkap.test.ts
 git commit -m "test(io): uji integrasi dari berkas xlsx sampai tabel gabungan"
 ```
-
 ---
 
 ## Kriteria Selesai Rencana Ini
