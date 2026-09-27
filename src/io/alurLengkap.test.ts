@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { hitungIndeksDimensi } from '../core/aggregator';
 import { bangunResponden } from '../core/bangunResponden';
-import { deteksiEmailKembar, deteksiEmailKosong } from '../core/duplikat';
+import { deteksiEmailKembar } from '../core/duplikat';
 import type { BarisMentah } from '../core/duplikat';
 import { hashPalsu } from '../core/__fixtures__/hash';
 import { gabungkanSesi, ringkasProyek } from '../core/merger';
@@ -264,15 +264,15 @@ describe('alur berkas ke nilai', () => {
       ),
     );
 
-    const { skema: skemaPre, responden: respondenPre } = petakan(imporPre);
+    const { skema: skemaPre, responden: respondenPre, petaan: petaanPre } = petakan(imporPre);
     const pre = bangunNilaiSesi({ sesiId: 's1', namaSesi: 'Pre-Test' }, respondenPre, skemaPre);
-    const { skema: skemaPost, responden: respondenPost } = petakan(imporPost);
+    const { skema: skemaPost, responden: respondenPost, petaan: petaanPost } = petakan(imporPost);
     const post = bangunNilaiSesi({ sesiId: 's2', namaSesi: 'Post-Test' }, respondenPost, skemaPost);
     gabungkanSesi([pre, post], { awal: 's1', akhir: 's2' });
 
     // Fajar, Gita, dan Hana berbagi satu id. Sinyalnya harus ada, dan menunjuk baris yang benar.
-    expect(deteksiEmailKosong(keBarisMentah(imporPre))).toEqual([3]);
-    expect(deteksiEmailKosong(keBarisMentah(imporPost))).toEqual([4, 5]);
+    expect(petaanPre.barisTanpaEmail).toEqual([3]);
+    expect(petaanPost.barisTanpaEmail).toEqual([4, 5]);
     expect(post.dipadatkan.get(idResponden('', hashPalsu))).toBe(2);
   });
 
