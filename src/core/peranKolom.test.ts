@@ -72,7 +72,7 @@ describe('tebakPeranKolom tidak tertipu teks pertanyaan', () => {
   });
 
   it('mencocokkan nama secara persis, bukan sekadar mengandung', () => {
-    const header = 'Name of the application you used most often';
+    const header = 'Your Name';
     expect(peranDari([header])[header]).toBe('belum-diputuskan');
   });
 
