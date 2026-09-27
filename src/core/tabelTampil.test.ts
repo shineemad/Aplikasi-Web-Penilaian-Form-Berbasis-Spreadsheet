@@ -79,7 +79,9 @@ describe('bangunTabelGabungan', () => {
     );
     expect(tabel.baris[0]?.[6]).toBe(TANDA_KOSONG);
     expect(tabel.baris[0]?.[8]).toBe(TANDA_KOSONG);
-    expect(tabel.baris[0]?.join(' ')).not.toContain('0,0');
+    // Sengaja TIDAK memakai pemeriksaan substring '0,0' pada seluruh baris:
+    // angka yang sah seperti "40,0" memuat substring itu, sehingga pemeriksaan
+    // semacam itu mustahil lolos. Assertion per sel di atas sudah lebih kuat.
   });
 
   it('menampilkan nama yang kosong sebagai tanda kosong', () => {
