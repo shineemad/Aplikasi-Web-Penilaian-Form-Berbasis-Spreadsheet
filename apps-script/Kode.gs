@@ -18,6 +18,8 @@
  *
  * `pengamat` belum muncul di sini karena sheet `Sesi` (spec §6.4) hanya punya
  * kolom `penilai` dan `admin` — peran itu belum punya tempat penyimpanan.
+ * Ini kelalaian spec yang menunggu keputusan pengguna, bukan kelalaian di sini;
+ * lihat koreksi C5 pada rencana store-dan-peran.
  */
 var SYARAT_AKSI = {
   bacaRekap: { peran: ['admin', 'penilai'], menulis: false },
@@ -31,33 +33,73 @@ var NAMA_SHEET_SESI = 'Sesi';
 /** Tanpa keempatnya, kebijakan izin tidak punya dasar untuk memutuskan apa pun. */
 var KOLOM_SESI_WAJIB = ['sesi_id', 'status', 'penilai', 'admin'];
 
+/**
+ * Daftar izin, bukan daftar larangan.
+ *
+ * Spec §6.4 hanya mengenal tiga status dan hanya dua di antaranya boleh
+ * ditulisi. Menolak `final` saja membuat "Selesai", "finalized", dan kolom
+ * status yang kosong semuanya lolos sebagai sesi yang masih terbuka.
+ */
+var STATUS_BOLEH_DITULIS = ['draft', 'berjalan'];
+
 /** Titik masuk tunggal untuk seluruh permintaan dari frontend. */
 function doPost(e) {
   var permintaan = bacaPermintaan_(e);
   if (permintaan === null) {
-    return balas_({
-      ok: false,
-      kode: 'MUATAN_TIDAK_SAH',
-      pesan:
+    return balas_(
+      tolakMuatan_(
         'Badan permintaan harus berupa JSON yang memuat medan "aksi" bertipe teks. ' +
-        'Periksa apa yang dikirim frontend sebelum mengulang.',
-    });
+          'Periksa apa yang dikirim frontend sebelum mengulang.',
+      ),
+    );
   }
 
+  // Larik dan angka lolos rapikanTeks_ menjadi teks yang tampak masuk akal,
+  // sehingga izin bisa diperiksa terhadap satu sesi lalu ditulis ke sesi lain.
+  if (typeof permintaan.sesiId !== 'string') {
+    return balas_(
+      tolakMuatan_(
+        'Medan "sesiId" harus berupa teks. Larik seperti ["S1"] dan angka seperti 1 ditolak ' +
+          'supaya izin dan penulisan tidak pernah menunjuk sesi yang berbeda.',
+      ),
+    );
+  }
+
+  var sesi = cariSesi_(permintaan.sesiId);
+
   // Identitas diambil dari sesi Google, bukan dari permintaan (Batasan Global 15).
-  var keputusan = putuskanIzin_(emailPemanggil_(), permintaan.aksi, cariSesi_(permintaan.sesiId));
+  var keputusan = putuskanIzin_(emailPemanggil_(), permintaan.aksi, sesi);
   if (keputusan.izin !== true) {
     return balas_({ ok: false, kode: keputusan.kode, pesan: keputusan.pesan });
   }
 
-  return balas_({
-    ok: true,
-    kode: 'IZIN_DIBERIKAN',
+  // sesiId yang diteruskan adalah bentuk kanonik hasil cariSesi_, bukan teks
+  // mentah pemanggil, supaya aksi menulis ke sesi yang barusan diizinkan.
+  return balas_(
+    jalankanAksi_({ aksi: permintaan.aksi, sesiId: sesi.sesiId, muatan: permintaan.muatan }),
+  );
+}
+
+/**
+ * Titik sambung untuk Tugas 3 dan seterusnya.
+ *
+ * Selama handler-nya belum ada, jawaban yang benar adalah GAGAL. Store membuang
+ * perintah dari antrean begitu melihat `ok:true` (Batasan Global 18), jadi
+ * sukses palsu di sini berarti penilaian hilang tanpa seorang pun tahu.
+ */
+function jalankanAksi_(perintah) {
+  return {
+    ok: false,
+    kode: 'AKSI_BELUM_DIBANGUN',
+    sesiId: perintah.sesiId,
     pesan:
-      'Izin diberikan, tetapi aksi "' +
-      permintaan.aksi +
-      '" belum dibangun: tidak ada yang dibaca maupun ditulis.',
-  });
+      'Kebijakan izin meloloskan aksi "' +
+      perintah.aksi +
+      '" pada sesi "' +
+      perintah.sesiId +
+      '", tetapi backend belum punya penanganannya: tidak ada yang dibaca maupun ditulis. ' +
+      'Jangan menandai perintah ini tersimpan; kirim ulang setelah backend diperbarui.',
+  };
 }
 
 /**
@@ -68,23 +110,37 @@ function doPost(e) {
  *
  * 1. identitas kosong — supaya deployment anonim terlihat sebagai salah setel,
  *    bukan sebagai penolakan peran biasa (K5);
- * 2. sesi ada — daftar perannya melekat pada baris sesi, jadi tanpa sesi tidak
+ * 2. sheet Sesi cacat — daftar peran dibaca dari sheet itu, jadi selama
+ *    bentuknya tidak bisa dipercaya tidak ada satu pun jawaban yang bisa
+ *    dipercaya, termasuk "orang ini bukan siapa-siapa";
+ * 3. sesi ada — daftar perannya melekat pada baris sesi, jadi tanpa sesi tidak
  *    ada yang bisa ditimbang;
- * 3. orang dikenal — sebelum aksi, supaya orang luar tidak dapat menebak daftar
+ * 4. orang dikenal — sebelum aksi, supaya orang luar tidak dapat menebak daftar
  *    aksi backend dengan membandingkan kode penolakan;
- * 4. peran cukup — sebelum status sesi, supaya penilai yang menyentuh skema
+ * 5. peran cukup — sebelum status sesi, supaya penilai yang menyentuh skema
  *    diberi tahu alasan yang sebenarnya, bukan alasan yang kebetulan lebih dulu
  *    menghalangi;
- * 5. status sesi — hanya untuk aksi yang menulis; sesi final tetap terbaca.
+ * 6. status sesi — hanya untuk aksi yang menulis; sesi final tetap terbaca.
  */
 function putuskanIzin_(emailSesi, aksi, sesi) {
   var pemanggil = rapikanKecil_(emailSesi);
   if (pemanggil === '') {
     return tolak_(
       'TANPA_IDENTITAS',
-      'Google tidak mengirimkan identitas pemanggil. Web App ini harus dideploy dengan ' +
-        '"Jalankan sebagai: Pengguna yang mengakses" dan akses "Siapa saja dengan Akun Google". ' +
-        'Akses anonim membuat identitas kosong dan seluruh pemeriksaan peran runtuh.',
+      'Google tidak mengirimkan identitas pemanggil, jadi tidak ada yang bisa dicocokkan dengan ' +
+        'daftar peran pada sheet Sesi. Akses anonim dan akun di luar domain yang diizinkan ' +
+        'sama-sama menghasilkan email kosong, sehingga mode deployment tidak boleh ditebak dari ' +
+        'pesan ini. Ikuti protokol keamanan proyek untuk menentukan dan membuktikan setelannya.',
+    );
+  }
+
+  if (sesi.cacat !== '') {
+    return tolak_(
+      'SESI_CACAT',
+      'Sheet Sesi tidak bisa dipercaya: ' +
+        sesi.cacat +
+        '. Selama bentuknya begini, daftar peran tidak punya arti, jadi permintaan ditolak ' +
+        'alih-alih ditebak. Perbaiki sheet Sesi lebih dulu.',
     );
   }
 
@@ -135,14 +191,27 @@ function putuskanIzin_(emailSesi, aksi, sesi) {
     );
   }
 
-  if (syarat.menulis === true && sesi.status === 'final') {
-    return tolak_(
-      'SESI_FINAL',
-      'Sesi "' +
-        sesi.sesiId +
-        '" sudah final, jadi tidak menerima penulisan apa pun — termasuk dari admin. ' +
-        'Kembalikan statusnya ke "berjalan" lebih dulu bila memang masih perlu diubah.',
-    );
+  if (syarat.menulis === true) {
+    if (sesi.status === 'final') {
+      return tolak_(
+        'SESI_FINAL',
+        'Sesi "' +
+          sesi.sesiId +
+          '" sudah final, jadi tidak menerima penulisan apa pun — termasuk dari admin. ' +
+          'Kembalikan statusnya ke "berjalan" lebih dulu bila memang masih perlu diubah.',
+      );
+    }
+    if (!adaDalam_(STATUS_BOLEH_DITULIS, sesi.status)) {
+      return tolak_(
+        'SESI_CACAT',
+        'Sesi "' +
+          sesi.sesiId +
+          '" berstatus ' +
+          (sesi.status === '' ? 'kosong' : '"' + sesi.status + '"') +
+          ', bukan salah satu dari draft, berjalan, atau final. Karena tidak ada cara tahu apakah ' +
+          'sesi ini sudah ditutup, penulisan ditolak. Perbaiki kolom status pada sheet Sesi.',
+      );
+    }
   }
 
   return { izin: true };
@@ -156,16 +225,17 @@ function emailPemanggil_() {
 }
 
 /**
- * Hasilnya selalu berupa objek bertanda `ada`, bukan null, supaya penolakan
- * tetap bisa menyebut sesi mana yang diminta.
+ * Hasilnya selalu berupa objek bertanda `ada` dan `cacat`, bukan null, supaya
+ * penolakan tetap bisa menyebut sesi mana yang diminta.
  *
- * Sheet Sesi yang hilang dan kolom wajib yang kurang sama-sama menghasilkan
- * `ada: false`: kolom peran yang hilang tidak boleh berarti "tidak ada yang
- * dilarang".
+ * Kolom wajib yang hilang, kolom kepala yang kembar, dan `sesi_id` yang muncul
+ * pada lebih dari satu baris sama-sama menghasilkan `cacat`: ketiganya membuat
+ * daftar peran tidak punya arti, dan menebak baris pertama berarti membuka
+ * sesi final hanya karena ada baris kedua yang lebih tua.
  */
 function cariSesi_(sesiId) {
   var kunci = rapikanTeks_(sesiId);
-  var kosong = { ada: false, sesiId: kunci, status: '', penilai: [], admin: [] };
+  var kosong = { ada: false, cacat: '', sesiId: kunci, status: '', penilai: [], admin: [] };
   if (kunci === '') return kosong;
 
   var berkas = SpreadsheetApp.getActive();
@@ -177,30 +247,50 @@ function cariSesi_(sesiId) {
   var kepala = kisi.length === 0 ? [] : kisi[0];
   var posisi = {};
   for (var k = 0; k < KOLOM_SESI_WAJIB.length; k += 1) {
-    var kolom = cariKolom_(kepala, KOLOM_SESI_WAJIB[k]);
-    if (kolom < 0) return kosong;
-    posisi[KOLOM_SESI_WAJIB[k]] = kolom;
+    var nama = KOLOM_SESI_WAJIB[k];
+    var ditemukan = semuaKolom_(kepala, nama);
+    if (ditemukan.length === 0) {
+      return cacatSesi_(kunci, 'kolom "' + nama + '" tidak ada');
+    }
+    if (ditemukan.length > 1) {
+      return cacatSesi_(kunci, 'kolom "' + nama + '" muncul ' + ditemukan.length + ' kali');
+    }
+    posisi[nama] = ditemukan[0];
   }
 
+  var ketemu = null;
   for (var b = 1; b < kisi.length; b += 1) {
     var baris = kisi[b];
     if (rapikanTeks_(baris[posisi['sesi_id']]) !== kunci) continue;
-    return {
+    if (ketemu !== null) {
+      return cacatSesi_(kunci, 'sesi_id "' + kunci + '" muncul pada lebih dari satu baris');
+    }
+    ketemu = {
       ada: true,
+      cacat: '',
       sesiId: kunci,
       status: rapikanKecil_(baris[posisi['status']]),
       penilai: daftarEmail_(baris[posisi['penilai']]),
       admin: daftarEmail_(baris[posisi['admin']]),
     };
   }
-  return kosong;
+  return ketemu === null ? kosong : ketemu;
 }
 
-function cariKolom_(kepala, nama) {
+function cacatSesi_(sesiId, alasan) {
+  return { ada: false, cacat: alasan, sesiId: sesiId, status: '', penilai: [], admin: [] };
+}
+
+/**
+ * Mengembalikan seluruh posisi, bukan yang pertama: dua kolom bernama sama
+ * berarti admin melihat satu kolom sementara backend membaca kolom lainnya.
+ */
+function semuaKolom_(kepala, nama) {
+  var hasil = [];
   for (var i = 0; i < kepala.length; i += 1) {
-    if (rapikanKecil_(kepala[i]) === nama) return i;
+    if (rapikanKecil_(kepala[i]) === nama) hasil.push(i);
   }
-  return -1;
+  return hasil;
 }
 
 function peranDalamSesi_(email, sesi) {
@@ -265,6 +355,10 @@ function rapikanTeks_(nilai) {
 
 function tolak_(kode, pesan) {
   return { izin: false, kode: kode, pesan: pesan };
+}
+
+function tolakMuatan_(pesan) {
+  return { ok: false, kode: 'MUATAN_TIDAK_SAH', pesan: pesan };
 }
 
 function bacaPermintaan_(e) {

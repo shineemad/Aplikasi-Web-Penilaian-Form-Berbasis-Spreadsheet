@@ -81,6 +81,36 @@ const POLA_FUNGSI_PRIVAT: RegExp[] = [
 const mendeklarasiFungsiPrivat = (isi: string): boolean =>
   POLA_FUNGSI_PRIVAT.some((pola) => pola.test(isi));
 
+/**
+ * Apps Script mengekspos setiap pengikatan global sebagai sesuatu yang bisa
+ * dipanggil dari luar berkas; akhiran garis bawah adalah satu-satunya cara
+ * menyembunyikannya. Akhiran itu penjaga keamanan, bukan adat: satu fungsi
+ * tanpa garis bawah berarti satu bagian kebijakan yang bisa dipanggil langsung,
+ * melewati seluruh pemeriksaan peran di `doPost`.
+ *
+ * Hanya pengikatan di kolom pertama yang dihitung, karena hanya itu yang
+ * benar-benar menjadi global di Apps Script.
+ */
+const TITIK_MASUK_GOOGLE = ['doPost', 'doGet'];
+
+const POLA_GLOBAL: RegExp[] = [
+  /^function\s*\*?\s*([\w$]+)\s*\(/gm,
+  /^(?:var|let|const)\s+([\w$]+)\s*=\s*(?:async\s*)?(?:function\b|\([^)]*\)\s*=>|[\w$]+\s*=>)/gm,
+];
+
+const globalYangTerbuka = (sumber: string): string[] => {
+  const hasil: string[] = [];
+  for (const pola of POLA_GLOBAL) {
+    for (const cocok of sumber.matchAll(pola)) {
+      const nama = cocok[1];
+      if (nama === undefined || nama.endsWith('_')) continue;
+      if (TITIK_MASUK_GOOGLE.includes(nama)) continue;
+      hasil.push(nama);
+    }
+  }
+  return hasil;
+};
+
 function muatDenganGooglePalsu(): Record<string, unknown> {
   const ss = buatSpreadsheetPalsu({ Sesi: SESI_BAWAAN, Penilaian: [KEPALA_PENILAIAN] });
   return muatKode({
@@ -322,5 +352,36 @@ describe('sensor fungsi privat itu sendiri', () => {
     expect(mendeklarasiFungsiPrivat('const hasil = putuskanIzin_(email);')).toBe(false);
     expect(mendeklarasiFungsiPrivat('return balas_({ ok: false });')).toBe(false);
     expect(mendeklarasiFungsiPrivat('function panggil(opsi) {}')).toBe(false);
+  });
+});
+
+describe('Kode.gs tidak boleh mengekspos apa pun selain titik masuk Google', () => {
+  it('menyembunyikan seluruh fungsi global di balik akhiran garis bawah', () => {
+    // Fungsi global tanpa garis bawah muncul di daftar "Jalankan fungsi" editor
+    // Apps Script dan dapat dipicu lewat pemicu, jadi ia melewati doPost dan
+    // seluruh kebijakan izin yang ada di dalamnya.
+    expect(globalYangTerbuka(bacaSumberKode())).toEqual([]);
+  });
+});
+
+describe('sensor fungsi global itu sendiri', () => {
+  it('menangkap deklarasi dan pengikatan tingkat atas tanpa garis bawah', () => {
+    expect(globalYangTerbuka('function simpanPenilaian(e) {}')).toEqual(['simpanPenilaian']);
+    expect(globalYangTerbuka('var siapkan = function () {};')).toEqual(['siapkan']);
+    expect(globalYangTerbuka('const siapkan = () => {};')).toEqual(['siapkan']);
+    expect(globalYangTerbuka('let siapkan = async (e) => {};')).toEqual(['siapkan']);
+  });
+
+  it('melewatkan titik masuk Google, nama bergaris bawah, dan fungsi bersarang', () => {
+    expect(globalYangTerbuka('function doPost(e) {}')).toEqual([]);
+    expect(globalYangTerbuka('function doGet(e) {}')).toEqual([]);
+    expect(globalYangTerbuka('function putuskanIzin_(e) {}')).toEqual([]);
+    expect(globalYangTerbuka('  function dalam(e) {}')).toEqual([]);
+  });
+
+  it('tidak menganggap tetapan data sebagai fungsi', () => {
+    expect(globalYangTerbuka("var NAMA_SHEET_SESI = 'Sesi';")).toEqual([]);
+    expect(globalYangTerbuka('var SYARAT_AKSI = { bacaRekap: {} };')).toEqual([]);
+    expect(globalYangTerbuka("var KOLOM_SESI_WAJIB = ['sesi_id'];")).toEqual([]);
   });
 });
