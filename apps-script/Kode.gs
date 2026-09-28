@@ -29,9 +29,33 @@ var SYARAT_AKSI = {
 };
 
 var NAMA_SHEET_SESI = 'Sesi';
+var NAMA_SHEET_PENILAIAN = 'Penilaian';
 
 /** Tanpa keempatnya, kebijakan izin tidak punya dasar untuk memutuskan apa pun. */
 var KOLOM_SESI_WAJIB = ['sesi_id', 'status', 'penilai', 'admin'];
+
+/**
+ * Spec §6.3. Urutannya di sini tidak menentukan apa pun: baris ditulis dengan
+ * menempatkan tiap nilai pada kolom yang kepalanya bernama sama, karena menulis
+ * larik berurutan ke sheet yang kolomnya ditukar tetap berhasil — angkanya
+ * hanya mendarat di kolom yang keliru, dan tidak ada yang akan menyadarinya.
+ */
+var KOLOM_PENILAIAN_WAJIB = [
+  'penilaian_id',
+  'sesi_id',
+  'responden_id',
+  'kriteria',
+  'nilai',
+  'catatan',
+  'oleh',
+  'pada',
+];
+
+/**
+ * Menunggu tanpa batas membekukan penilai lain sampai Apps Script sendiri
+ * menyerah; lebih baik menolak dengan pesan yang menyuruh mencoba lagi.
+ */
+var BATAS_KUNCI_MS = 10000;
 
 /**
  * Daftar izin, bukan daftar larangan.
@@ -68,26 +92,37 @@ function doPost(e) {
   var sesi = cariSesi_(permintaan.sesiId);
 
   // Identitas diambil dari sesi Google, bukan dari permintaan (Batasan Global 15).
-  var keputusan = putuskanIzin_(emailPemanggil_(), permintaan.aksi, sesi);
+  var pemanggil = emailPemanggil_();
+  var keputusan = putuskanIzin_(pemanggil, permintaan.aksi, sesi);
   if (keputusan.izin !== true) {
     return balas_({ ok: false, kode: keputusan.kode, pesan: keputusan.pesan });
   }
 
   // sesiId yang diteruskan adalah bentuk kanonik hasil cariSesi_, bukan teks
   // mentah pemanggil, supaya aksi menulis ke sesi yang barusan diizinkan.
+  // `oleh` dirapikan dengan cara yang sama dengan daftar peran pada sheet Sesi;
+  // jejak audit yang menyimpan " PENILAI@Kampus.id " tidak akan pernah cocok
+  // dengan daftar itu saat direkap kembali.
   return balas_(
-    jalankanAksi_({ aksi: permintaan.aksi, sesiId: sesi.sesiId, muatan: permintaan.muatan }),
+    jalankanAksi_({
+      aksi: permintaan.aksi,
+      sesiId: sesi.sesiId,
+      oleh: rapikanKecil_(pemanggil),
+      muatan: permintaan.muatan,
+    }),
   );
 }
 
 /**
- * Titik sambung untuk Tugas 3 dan seterusnya.
+ * Titik sambung untuk aksi yang belum dibangun.
  *
  * Selama handler-nya belum ada, jawaban yang benar adalah GAGAL. Store membuang
  * perintah dari antrean begitu melihat `ok:true` (Batasan Global 18), jadi
  * sukses palsu di sini berarti penilaian hilang tanpa seorang pun tahu.
  */
 function jalankanAksi_(perintah) {
+  if (perintah.aksi === 'simpanPenilaian') return simpanPenilaian_(perintah);
+
   return {
     ok: false,
     kode: 'AKSI_BELUM_DIBANGUN',
@@ -99,6 +134,223 @@ function jalankanAksi_(perintah) {
       perintah.sesiId +
       '", tetapi backend belum punya penanganannya: tidak ada yang dibaca maupun ditulis. ' +
       'Jangan menandai perintah ini tersimpan; kirim ulang setelah backend diperbarui.',
+  };
+}
+
+/**
+ * Satu-satunya jalur tulis ke sheet `Penilaian` (Batasan Global 17: append-only).
+ *
+ * Kunci diambil lebih dulu dan dilepas di `finally`, termasuk saat penulisan
+ * melempar: kunci yang tergantung membekukan seluruh sistem sampai batas
+ * waktunya habis, dan jalur gagal justru yang paling sering melupakannya
+ * (Batasan Global 19). Kegagalan mengambil kunci menghasilkan penolakan, bukan
+ * penulisan di luar kunci — dua penilai yang menulis bersamaan tanpa kunci akan
+ * memperoleh `penilaian_id` yang sama dan salah satunya menghilang.
+ */
+function simpanPenilaian_(perintah) {
+  var isi = bacaMuatanPenilaian_(perintah.muatan);
+  if (isi.sah !== true) return tolakMuatan_(isi.pesan);
+
+  var kunci = LockService.getScriptLock();
+  try {
+    kunci.waitLock(BATAS_KUNCI_MS);
+  } catch (galat) {
+    return {
+      ok: false,
+      kode: 'SEDANG_SIBUK',
+      sesiId: perintah.sesiId,
+      pesan:
+        'Penilai lain sedang menulis ke sesi "' +
+        perintah.sesiId +
+        '" dan gilirannya belum selesai, jadi tidak ada yang disimpan. Coba lagi sebentar; ' +
+        'jangan tandai penilaian ini tersimpan.',
+    };
+  }
+
+  try {
+    return tulisPenilaian_(perintah, isi);
+  } catch (galat) {
+    // Error yang lolos dari doPost membuat Apps Script mengirim halaman HTML
+    // yang tidak bisa dibaca klien, sehingga kegagalannya menjadi kegagalan diam.
+    return {
+      ok: false,
+      kode: 'GAGAL_MENULIS',
+      sesiId: perintah.sesiId,
+      pesan:
+        'Baris penilaian gagal ditulis ke sheet Penilaian: ' +
+        String(galat) +
+        '. Tidak ada yang tersimpan, jadi kirim ulang setelah sebabnya diperbaiki.',
+    };
+  } finally {
+    kunci.releaseLock();
+  }
+}
+
+/** Dipanggil hanya dari dalam kunci; memanggilnya dari tempat lain memutus C2. */
+function tulisPenilaian_(perintah, isi) {
+  var berkas = SpreadsheetApp.getActive();
+  var sheet =
+    berkas === null || berkas === undefined ? null : berkas.getSheetByName(NAMA_SHEET_PENILAIAN);
+  if (sheet === null || sheet === undefined) {
+    return {
+      ok: false,
+      kode: 'PENILAIAN_TIDAK_ADA',
+      sesiId: perintah.sesiId,
+      pesan:
+        'Sheet Penilaian tidak ada pada Spreadsheet Ruang Kerja, jadi tidak ada tempat menyimpan ' +
+        'nilai. Jalankan penyiapan ruang kerja lebih dulu, lalu kirim ulang penilaian ini.',
+    };
+  }
+
+  var kisi = sheet.getDataRange().getValues();
+  var kepala = kisi.length === 0 ? [] : kisi[0];
+  var posisi = {};
+  for (var k = 0; k < KOLOM_PENILAIAN_WAJIB.length; k += 1) {
+    var nama = KOLOM_PENILAIAN_WAJIB[k];
+    var ditemukan = semuaKolom_(kepala, nama);
+    if (ditemukan.length !== 1) {
+      return {
+        ok: false,
+        kode: 'PENILAIAN_CACAT',
+        sesiId: perintah.sesiId,
+        pesan:
+          'Sheet Penilaian tidak bisa ditulisi: kolom "' +
+          nama +
+          '" ' +
+          (ditemukan.length === 0 ? 'tidak ada' : 'muncul ' + ditemukan.length + ' kali') +
+          '. Menebak kolomnya berarti nilai mendarat di kolom yang keliru tanpa ada yang tahu, ' +
+          'jadi tidak ada yang ditulis. Perbaiki kepala kolom sheet Penilaian lebih dulu.',
+      };
+    }
+    posisi[nama] = ditemukan[0];
+  }
+
+  var nomor = nomorPenilaianBerikutnya_(kisi, posisi['penilaian_id']);
+  var pada = new Date().toISOString();
+
+  var baris = [];
+  for (var i = 0; i < kepala.length; i += 1) baris.push('');
+  baris[posisi['penilaian_id']] = nomor;
+  baris[posisi['sesi_id']] = perintah.sesiId;
+  baris[posisi['responden_id']] = isi.respondenId;
+  baris[posisi['kriteria']] = isi.kriteria;
+  baris[posisi['nilai']] = isi.nilai;
+  baris[posisi['catatan']] = isi.catatan;
+  baris[posisi['oleh']] = perintah.oleh;
+  baris[posisi['pada']] = pada;
+  sheet.appendRow(baris);
+
+  return {
+    ok: true,
+    kode: 'TERSIMPAN',
+    sesiId: perintah.sesiId,
+    penilaianId: nomor,
+    oleh: perintah.oleh,
+    pada: pada,
+    pesan:
+      'Penilaian tersimpan sebagai baris baru bernomor ' +
+      nomor +
+      ' pada sheet Penilaian; baris sebelumnya tidak diubah.',
+  };
+}
+
+/**
+ * Nomor urut diberikan server di dalam kunci (koreksi C2).
+ *
+ * Cap waktu tidak dipakai: dua penilai yang menulis dalam detik yang sama
+ * menghasilkan cap identik, sehingga "baris terakhir yang berlaku" menjadi
+ * bergantung pada urutan pembacaan. Jumlah baris juga tidak dipakai, karena
+ * sheet yang pernah disunting tangan bisa menghasilkan nomor yang sudah ada.
+ */
+function nomorPenilaianBerikutnya_(kisi, kolom) {
+  var terbesar = 0;
+  for (var b = 1; b < kisi.length; b += 1) {
+    var sel = kisi[b][kolom];
+    var angka = typeof sel === 'number' ? sel : Number(rapikanTeks_(sel));
+    if (isFinite(angka) && angka > terbesar) terbesar = angka;
+  }
+  return Math.floor(terbesar) + 1;
+}
+
+/**
+ * Muatan datang dari luar, jadi bentuknya diperiksa sebelum apa pun ditulis.
+ *
+ * `nilai` sengaja hanya menerima angka. Sheets memaksa "80" menjadi 80 dan ""
+ * menjadi sel kosong, sehingga teks yang lolos di sini akan tampak wajar di
+ * layar — termasuk angka yang tidak pernah diketik penilai, tercatat atas
+ * namanya. Baris tanpa nilai maupun catatan juga ditolak: ia hanya menambah
+ * riwayat tanpa mengubah apa pun, sementara balasan sukses membuat penilai
+ * mengira pekerjaannya tersimpan.
+ */
+function bacaMuatanPenilaian_(muatan) {
+  if (muatan === null || typeof muatan !== 'object') {
+    return {
+      sah: false,
+      pesan:
+        'Medan "muatan" harus berupa objek yang memuat respondenId, kriteria, dan salah satu dari ' +
+        'nilai atau catatan.',
+    };
+  }
+
+  var respondenId = rapikanTeks_(muatan.respondenId);
+  if (typeof muatan.respondenId !== 'string' || respondenId === '') {
+    return {
+      sah: false,
+      pesan:
+        'Medan "respondenId" harus berupa teks yang tidak kosong. Tanpa itu, nilai ini tidak bisa ' +
+        'dikaitkan dengan siapa pun saat direkap.',
+    };
+  }
+
+  var kriteria = rapikanTeks_(muatan.kriteria);
+  if (typeof muatan.kriteria !== 'string' || kriteria === '') {
+    return {
+      sah: false,
+      pesan:
+        'Medan "kriteria" harus berupa teks yang tidak kosong, yaitu nama kolom asal atau nama ' +
+        'kriteria manual yang sedang dinilai.',
+    };
+  }
+
+  var nilai = '';
+  if (muatan.nilai !== null && muatan.nilai !== undefined) {
+    if (typeof muatan.nilai !== 'number' || !isFinite(muatan.nilai)) {
+      return {
+        sah: false,
+        pesan:
+          'Medan "nilai" harus berupa angka, atau dihilangkan sama sekali bila baris ini hanya ' +
+          'berisi catatan. Teks seperti "80" dan "" ditolak supaya sel kosong tidak pernah ' +
+          'berubah menjadi 0.',
+      };
+    }
+    nilai = muatan.nilai;
+  }
+
+  var catatan = '';
+  if (muatan.catatan !== null && muatan.catatan !== undefined) {
+    if (typeof muatan.catatan !== 'string') {
+      return { sah: false, pesan: 'Medan "catatan" harus berupa teks bila diisi.' };
+    }
+    // Hanya spasi tepi yang dibuang; catatan adalah teks bebas, jadi spasi dan
+    // baris baru di dalamnya memang ditulis penilai dengan sengaja.
+    catatan = muatan.catatan.trim();
+  }
+
+  if (nilai === '' && catatan === '') {
+    return {
+      sah: false,
+      pesan:
+        'Permintaan tidak memuat nilai maupun catatan, jadi tidak ada yang bisa disimpan. ' +
+        'Isi salah satunya lebih dulu.',
+    };
+  }
+
+  return {
+    sah: true,
+    respondenId: respondenId,
+    kriteria: kriteria,
+    nilai: nilai,
+    catatan: catatan,
   };
 }
 

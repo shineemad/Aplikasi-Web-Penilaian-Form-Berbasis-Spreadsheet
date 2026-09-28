@@ -4,6 +4,7 @@ import {
   buatLockServicePalsu,
   buatSessionPalsu,
   buatSpreadsheetPalsu,
+  sheetWajib,
   type KeluaranTeksPalsu,
   type SpreadsheetPalsu,
 } from './googlePalsu';
@@ -64,6 +65,17 @@ const KEPALA_PENILAIAN: unknown[] = [
  * implementasi yang membandingkan mentah-mentah akan tetap hijau.
  */
 const PENILAI_BAWAAN = 'Penilai@Kampus.id ';
+
+/**
+ * Sejak Tugas 3, `simpanPenilaian` benar-benar menulis. Uji izin yang dulu
+ * cukup mengirim muatan kosong kini harus mengirim muatan yang sah, karena
+ * muatan kosong ditolak sebelum kebijakan izin sempat terbukti meloloskannya.
+ */
+const MUATAN_PENILAIAN: Record<string, unknown> = {
+  respondenId: 'a1',
+  kriteria: 'K1',
+  nilai: 80,
+};
 
 const SESI_BAWAAN: BarisSesi = {
   sesiId: 'S1',
@@ -194,10 +206,11 @@ describe('spec §11.3 — empat kasus uji keamanan', () => {
 describe('izin yang lolos bukan berarti aksi terjadi', () => {
   it('menolak aksi yang belum dibangun alih-alih menjawab sukses', () => {
     // Store membuang perintah dari antrean begitu melihat ok:true (Batasan
-    // Global 18). Selama handler-nya belum ada, ok:true berarti penilaian
-    // hilang diam-diam — kebalikan dari aturan 7 repo. Tugas 3 harus mengubah
-    // uji ini secara sadar, bukan menemukannya sudah hijau.
-    const { balasan } = panggil({ email: 'admin@kampus.id', aksi: 'simpanPenilaian' });
+    // Global 18). Selama handler-nya belum ada, ok:true berarti perintahnya
+    // hilang diam-diam. `simpanPenilaian` sudah dibangun di Tugas 3, jadi yang
+    // dipakai di sini adalah aksi yang memang masih kosong — penjaganya tetap
+    // dibutuhkan selama masih ada aksi yang belum punya penanganan.
+    const { balasan } = panggil({ email: 'admin@kampus.id', aksi: 'bacaRekap' });
     expect(balasan.ok).toBe(false);
     expect(balasan.kode).toBe('AKSI_BELUM_DIBANGUN');
     expect(balasan.pesan).toMatch(/belum/i);
@@ -205,15 +218,28 @@ describe('izin yang lolos bukan berarti aksi terjadi', () => {
 
   it('meneruskan sesiId dalam bentuk kanonik, bukan teks mentah pemanggil', () => {
     // Kebijakan izin memakai bentuk yang sudah dirapikan. Bila yang diteruskan
-    // ke handler adalah teks mentah, Tugas 3 bisa memeriksa izin pada satu sesi
-    // lalu menulis ke sesi lain.
+    // ke handler adalah teks mentah, backend bisa memeriksa izin pada satu sesi
+    // lalu menulis ke sesi lain. Akibatnya pada baris yang benar-benar tertulis
+    // dibuktikan di penilaian.test.ts.
     const { balasan } = panggil({
       email: 'admin@kampus.id',
-      aksi: 'simpanPenilaian',
+      aksi: 'ubahSkema',
       sesiIdDikirim: '  S1 ',
     });
     expect(balasan.kode).toBe('AKSI_BELUM_DIBANGUN');
     expect(balasan.sesiId).toBe('S1');
+  });
+
+  it('benar-benar menulis saat aksinya memang sudah dibangun', () => {
+    // Sisi lain dari uji di atas. Tanpa ini, mengubah seluruh aksi menjadi
+    // AKSI_BELUM_DIBANGUN akan membuat berkas ini hijau seluruhnya.
+    const { balasan, ss } = panggil({
+      email: 'admin@kampus.id',
+      aksi: 'simpanPenilaian',
+      muatan: MUATAN_PENILAIAN,
+    });
+    expect(balasan.ok).toBe(true);
+    expect(sheetWajib(ss, 'Penilaian').getLastRow()).toBe(2);
   });
 });
 
@@ -322,8 +348,12 @@ describe('tiga jebakan yang tidak disebut §11.3', () => {
   it('mencocokkan email tanpa memedulikan huruf besar-kecil dan spasi tepi', () => {
     // Aturan 4 repo. Daftar penilai memuat "Penilai@Kampus.id "; sesi Google
     // mengirim "penilai@kampus.id". Keduanya orang yang sama.
-    const { balasan } = panggil({ email: 'penilai@kampus.id', aksi: 'simpanPenilaian' });
-    expect(balasan.kode).toBe('AKSI_BELUM_DIBANGUN');
+    const { balasan } = panggil({
+      email: 'penilai@kampus.id',
+      aksi: 'simpanPenilaian',
+      muatan: MUATAN_PENILAIAN,
+    });
+    expect(balasan.ok).toBe(true);
   });
 
   it('menormalkan email dari sesi Google, bukan hanya email dari sheet', () => {
@@ -451,9 +481,10 @@ describe('status sesi memakai daftar izin, bukan daftar larangan', () => {
     const { balasan } = panggil({
       email: 'admin@kampus.id',
       aksi: 'simpanPenilaian',
+      muatan: MUATAN_PENILAIAN,
       sesi: { status: 'draft' },
     });
-    expect(balasan.kode).toBe('AKSI_BELUM_DIBANGUN');
+    expect(balasan.ok).toBe(true);
   });
 
   for (const status of ['Selesai', '', 'final.', 'finalized', 'ditutup']) {
@@ -489,8 +520,12 @@ describe('tabel peran §9.1 diterjemahkan apa adanya', () => {
   it('mengizinkan admin menulis Penilaian pada sesi berjalan', () => {
     // Kolom "Tidak boleh" untuk Admin di §9.1 kosong; admin tidak dikecualikan
     // dari penulisan Penilaian.
-    const { balasan } = panggil({ email: 'admin@kampus.id', aksi: 'simpanPenilaian' });
-    expect(balasan.kode).toBe('AKSI_BELUM_DIBANGUN');
+    const { balasan } = panggil({
+      email: 'admin@kampus.id',
+      aksi: 'simpanPenilaian',
+      muatan: MUATAN_PENILAIAN,
+    });
+    expect(balasan.ok).toBe(true);
   });
 
   it('mengizinkan penilai membaca rekap', () => {
@@ -514,18 +549,20 @@ describe('tabel peran §9.1 diterjemahkan apa adanya', () => {
     const { balasan } = panggil({
       email: 'penilai2@kampus.id',
       aksi: 'simpanPenilaian',
+      muatan: MUATAN_PENILAIAN,
       sesi: { penilai: ['penilai1@kampus.id', 'penilai2@kampus.id'] },
     });
-    expect(balasan.kode).toBe('AKSI_BELUM_DIBANGUN');
+    expect(balasan.ok).toBe(true);
   });
 
   it('memisahkan daftar yang memakai titik koma', () => {
     const { balasan } = panggil({
       email: 'penilai2@kampus.id',
       aksi: 'simpanPenilaian',
+      muatan: MUATAN_PENILAIAN,
       sesi: { selPenilai: 'penilai1@kampus.id; penilai2@kampus.id' },
     });
-    expect(balasan.kode).toBe('AKSI_BELUM_DIBANGUN');
+    expect(balasan.ok).toBe(true);
   });
 
   it('memisahkan daftar yang memakai baris baru dalam satu sel', () => {
@@ -534,9 +571,10 @@ describe('tabel peran §9.1 diterjemahkan apa adanya', () => {
     const { balasan } = panggil({
       email: 'penilai2@kampus.id',
       aksi: 'simpanPenilaian',
+      muatan: MUATAN_PENILAIAN,
       sesi: { selPenilai: 'penilai1@kampus.id\npenilai2@kampus.id' },
     });
-    expect(balasan.kode).toBe('AKSI_BELUM_DIBANGUN');
+    expect(balasan.ok).toBe(true);
   });
 });
 
