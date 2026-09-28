@@ -36,8 +36,20 @@ export interface LockPalsu {
   waitLock(batasMs: number): void;
   releaseLock(): void;
   hasLock(): boolean;
+  /** Hanya pengambilan yang berhasil; waitLock yang melempar tidak menambahnya. */
   jumlahAmbil: number;
   jumlahLepas: number;
+}
+
+export interface LockServicePalsu {
+  getScriptLock(): LockPalsu;
+  /** Lock yang sama yang dikembalikan getScriptLock, supaya uji bisa memeriksanya. */
+  lock: LockPalsu;
+}
+
+export interface OpsiLock {
+  /** Meniru Google saat batas waktu habis: waitLock melempar, bukan mengembalikan false. */
+  batasWaktuHabis?: boolean;
 }
 
 export interface SessionPalsu {
@@ -59,6 +71,28 @@ function selDari(baris: unknown[] | undefined, indeks: number): unknown {
   if (baris === undefined) return '';
   const sel = baris[indeks];
   return sel === undefined ? '' : sel;
+}
+
+// Sengaja lebih sempit daripada Number(): Sheets tidak memperlakukan "0x10",
+// "Infinity", atau "1_000" sebagai angka.
+const POLA_ANGKA = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/;
+
+/** Sheets memaksa tipe sel seperti saat manusia mengetiknya, bukan menyimpan apa adanya. */
+function selSepertiSheets(nilai: unknown): unknown {
+  if (nilai === null || nilai === undefined) return '';
+  if (typeof nilai !== 'string') return nilai;
+  const rapat = nilai.trim();
+  return POLA_ANGKA.test(rapat) ? Number(rapat) : nilai;
+}
+
+function wajibIndeks(nilai: unknown, nama: string): number {
+  if (typeof nilai !== 'number' || !Number.isInteger(nilai) || nilai < 1) {
+    throw new Error(
+      `getRange menerima ${nama} = ${String(nilai)}. Palsu ini hanya menerima bilangan bulat >= 1; ` +
+        'notasi A1 seperti "B2" tidak didukung, dan menerimanya diam-diam akan membuang penulisan.',
+    );
+  }
+  return nilai;
 }
 
 function buatSheetPalsu(nama: string, isiAwal: unknown[][]): SheetPalsu {
@@ -127,11 +161,19 @@ function buatSheetPalsu(nama: string, isiAwal: unknown[][]): SheetPalsu {
 
   return {
     getName: () => nama,
-    getDataRange: () => buatRange(1, 1, kisi.length, lebarKisi()),
+    // Sheet Google selalu punya minimal satu sel, jadi sheet kosong pun
+    // menghasilkan [['']]. Mengembalikan [] membuat penyiapan kepala kolom yang
+    // bersyarat panjang-nol tampak jalan padahal tidak pernah menulis apa pun.
+    getDataRange: () => buatRange(1, 1, Math.max(1, kisi.length), Math.max(1, lebarKisi())),
     getRange: (baris, kolom, jumlahBaris, jumlahKolom) =>
-      buatRange(baris, kolom, jumlahBaris === undefined ? 1 : jumlahBaris, jumlahKolom === undefined ? 1 : jumlahKolom),
+      buatRange(
+        wajibIndeks(baris, 'baris'),
+        wajibIndeks(kolom, 'kolom'),
+        jumlahBaris === undefined ? 1 : jumlahBaris,
+        jumlahKolom === undefined ? 1 : jumlahKolom,
+      ),
     appendRow: (baris) => {
-      kisi.push([...baris]);
+      kisi.push(baris.map(selSepertiSheets));
     },
     getLastRow: () => kisi.length,
     deleteRow: (baris) => {
@@ -155,6 +197,12 @@ export function buatSpreadsheetPalsu(isiAwal: Record<string, unknown[][]>): Spre
       return ketemu === undefined ? null : ketemu;
     },
     insertSheet: (nama) => {
+      if (daftar.some((satu) => satu.getName() === nama)) {
+        throw new Error(
+          `Sheet bernama "${nama}" sudah ada; Google menolak insertSheet yang kembar. ` +
+            'Periksa keberadaannya dengan getSheetByName sebelum membuat.',
+        );
+      }
       const baru = buatSheetPalsu(nama, []);
       daftar.push(baru);
       return baru;
@@ -170,11 +218,14 @@ export function sheetWajib(ss: SpreadsheetPalsu, nama: string): SheetPalsu {
   return sheet;
 }
 
-export function buatLockPalsu(): LockPalsu {
+export function buatLockPalsu(opsi: OpsiLock = {}): LockPalsu {
   const lock: LockPalsu = {
     jumlahAmbil: 0,
     jumlahLepas: 0,
-    waitLock: () => {
+    waitLock: (batasMs) => {
+      if (opsi.batasWaktuHabis === true) {
+        throw new Error(`Tidak bisa mengambil kunci setelah ${String(batasMs)} ms.`);
+      }
       lock.jumlahAmbil += 1;
     },
     releaseLock: () => {
@@ -183,6 +234,16 @@ export function buatLockPalsu(): LockPalsu {
     hasLock: () => lock.jumlahAmbil > lock.jumlahLepas,
   };
   return lock;
+}
+
+/**
+ * Menyuntikkan `getScriptLock: buatLockPalsu` memberi lock baru tiap pemanggilan,
+ * sehingga uji tidak pernah memegang lock yang benar-benar dipakai Kode.gs dan
+ * Batasan Global 19 menjadi mustahil dibuktikan. Ini menutup satu lock saja.
+ */
+export function buatLockServicePalsu(opsi: OpsiLock = {}): LockServicePalsu {
+  const lock = buatLockPalsu(opsi);
+  return { lock, getScriptLock: () => lock };
 }
 
 export function buatSessionPalsu(email: string): SessionPalsu {

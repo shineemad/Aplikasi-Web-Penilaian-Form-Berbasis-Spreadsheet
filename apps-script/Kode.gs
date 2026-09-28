@@ -2,8 +2,10 @@
  * Backend FormScoring Engine — berkas yang benar-benar di-deploy ke Apps Script.
  *
  * Apps Script memuat berkas ini sebagai skrip global, jadi DILARANG memakai
- * sintaks modul. Uji memuat berkas yang sama persis (Batasan Global 20), jadi
- * sintaks modul akan lulus di sandbox tetapi gagal di Google.
+ * sintaks modul. Uji memuat berkas yang sama persis (Batasan Global 20) dan
+ * memeriksanya sebagai teks, supaya sebabnya tersebut: impor statis hanya
+ * menghasilkan SyntaxError yang tidak menyinggung Apps Script, sedangkan impor
+ * dinamis justru lulus di sandbox lalu gagal di Google.
  *
  * Akhiran garis bawah menandai fungsi yang tidak dipanggil dari luar berkas ini.
  */
