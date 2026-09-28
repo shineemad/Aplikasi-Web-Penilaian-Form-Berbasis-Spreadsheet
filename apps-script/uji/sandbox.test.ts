@@ -157,6 +157,11 @@ describe('sandbox yang memuat Kode.gs', () => {
     });
     expect(balasan.ok).toBe(false);
     expect(balasan.kode).toBe('AKSI_TIDAK_DIKENAL');
+    // Nama uji ini menjanjikan penolakan yang "bisa dibaca", jadi medan pesan
+    // ikut diperiksa: Batasan Global 10 menuntut pesan yang mengajari, dan
+    // tanpa pemeriksaan ini pesan kosong pun lolos.
+    expect(balasan.pesan).toContain('mengacakNilai');
+    expect(balasan.pesan).toMatch(/ejaan/i);
   });
 
   it('menolak muatan yang bukan JSON tanpa melempar keluar dari doPost', () => {

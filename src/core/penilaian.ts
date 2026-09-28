@@ -37,8 +37,20 @@ export function kunciPenilaian(sesiId: string, respondenId: string, kriteria: st
   return `${sesiId}|${respondenId}|${kriteria}`;
 }
 
-function adaIsinya(catatan: string | null): catatan is string {
-  return catatan !== null && catatan.trim() !== '';
+/**
+ * Baris datang dari `getValues()`, yang mengisi sel kosong dengan `''` — bukan
+ * `null` — dan melewatkan kolom yang tidak ada sebagai `undefined`. Keduanya
+ * lolos dari pemeriksaan `!== null`, sehingga catatan susulan akan menimpa
+ * angka 80 dengan `''` (memutus C1) dan aritmetika di hilir mengubahnya menjadi
+ * 0 (aturan 2). Karena itu tipenya yang diperiksa, bukan ketidaksamaannya
+ * dengan `null`.
+ */
+function adaAngkanya(nilai: unknown): nilai is number {
+  return typeof nilai === 'number';
+}
+
+function adaIsinya(catatan: unknown): catatan is string {
+  return typeof catatan === 'string' && catatan.trim() !== '';
 }
 
 function lebihBaru(asal: AsalBaris | null, penilaianId: number): boolean {
@@ -78,7 +90,7 @@ export function nilaiBerlaku(baris: BarisPenilaian[]): Map<string, HasilBerlaku>
     // di dalam LockService. Bila tetap muncul, yang pertama dibaca menang.
     const asal: AsalBaris = { penilaianId: satu.penilaianId, oleh: satu.oleh, pada: satu.pada };
 
-    if (satu.nilai !== null && lebihBaru(entri.nilaiDari, satu.penilaianId)) {
+    if (adaAngkanya(satu.nilai) && lebihBaru(entri.nilaiDari, satu.penilaianId)) {
       entri.nilai = satu.nilai;
       entri.nilaiDari = asal;
     }

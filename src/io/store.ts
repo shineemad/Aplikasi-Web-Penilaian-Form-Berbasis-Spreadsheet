@@ -54,7 +54,7 @@ export interface Store {
  * membuang penilaian yang sebenarnya masih bisa tersimpan. Kebalikannya —
  * mencoba ulang selamanya — hanya menumpuk antrean tanpa pernah berhasil.
  */
-const KODE_PERMANEN = [
+export const KODE_PERMANEN = [
   'MUATAN_TIDAK_SAH',
   'AKSI_TIDAK_DIKENAL',
   'TANPA_IDENTITAS',
@@ -66,6 +66,24 @@ const KODE_PERMANEN = [
   'PEMILIK_TIDAK_DIKETAHUI',
   'PENILAIAN_TIDAK_ADA',
   'PENILAIAN_CACAT',
+];
+
+/**
+ * Kode `ok:false` dari `Kode.gs` yang sengaja dibiarkan **sementara**.
+ *
+ * Daftar ini tidak dipakai `bacaBalasan` dan tidak mengubah perilaku apa pun:
+ * kode di luar `KODE_PERMANEN` sudah dianggap sementara tanpa perlu terdaftar.
+ * Gunanya satu — membuat kode kesalahan baru di `Kode.gs` merahkan uji
+ * tertutup, sehingga klasifikasinya diputuskan seseorang, bukan diwarisi dari
+ * cabang `else`. Isinya hanya kode yang benar-benar terbit dari `Kode.gs`;
+ * kode yang lahir di Store sendiri (`BALASAN_CACAT`, `JARINGAN`, `TANPA_KODE`)
+ * tidak termasuk.
+ */
+export const KODE_SEMENTARA = [
+  'AKSI_BELUM_DIBANGUN',
+  'SEDANG_SIBUK',
+  'GAGAL_MENULIS',
+  'GAGAL_MENYIAPKAN',
 ];
 
 const PESAN_BALASAN_CACAT =
@@ -152,11 +170,18 @@ export function buatStore(opsi: OpsiStore): Store {
     sedangMengirim = true;
 
     try {
+      // Potret diambil sekali. Antrean yang sama dibaca lagi di akhir untuk
+      // menemukan perintah yang diantre selagi pengiriman ini berjalan.
+      const potret = muat();
+      const nomorPotret = new Set(potret.map((satu) => satu.nomor));
       const tersisa: PerintahTertunda[] = [];
       let terkirim = 0;
       let ditolakPermanen = 0;
 
-      for (const satu of muat()) {
+      for (let i = 0; i < potret.length; i += 1) {
+        const satu = potret[i];
+        if (satu === undefined) continue;
+
         if (satu.kegagalan !== null && satu.kegagalan.sifat === 'permanen') {
           tersisa.push(satu);
           ditolakPermanen += 1;
@@ -185,10 +210,40 @@ export function buatStore(opsi: OpsiStore): Store {
           percobaan: satu.percobaan + 1,
           kegagalan: { sifat: hasil.sifat, kode: hasil.kode, pesan: hasil.pesan },
         });
-        if (hasil.sifat === 'permanen') ditolakPermanen += 1;
+
+        if (hasil.sifat === 'permanen') {
+          ditolakPermanen += 1;
+          continue;
+        }
+
+        // Kegagalan sementara menghentikan pengiriman di sini. Perintah ini akan
+        // dicoba ulang, dan `Penilaian` membuat baris yang tiba belakangan
+        // menang (C2): meneruskan antrean berarti koreksi yang sudah terkirim
+        // ditimpa angka lama yang baru berhasil pada percobaan berikutnya.
+        // Penolakan permanen tidak menghentikan apa pun — perintahnya tidak akan
+        // pernah terkirim, jadi ia tidak bisa mendarat sesudah penggantinya.
+        for (let j = i + 1; j < potret.length; j += 1) {
+          const belumDicoba = potret[j];
+          if (belumDicoba === undefined) continue;
+          tersisa.push(belumDicoba);
+          if (belumDicoba.kegagalan !== null && belumDicoba.kegagalan.sifat === 'permanen') {
+            ditolakPermanen += 1;
+          }
+        }
+        break;
       }
 
-      simpan(tersisa);
+      // Menulis `tersisa` apa adanya akan menghapus perintah yang masuk lewat
+      // `antre()` selagi `await` di atas berjalan — penilai yang mengetik saat
+      // pengiriman berlangsung kehilangan angkanya tanpa satu pun tanda
+      // (aturan 7, Batasan Global 18).
+      const disisipkan = muat().filter((satu) => !nomorPotret.has(satu.nomor));
+      simpan([...tersisa, ...disisipkan]);
+
+      // Ringkasan menghitung potret saja, sehingga
+      // terkirim + tertundaSementara + ditolakPermanen selalu sama dengan
+      // panjang potret. Perintah yang disisipkan belum pernah dicoba pada
+      // putaran ini; jumlah antrean sebenarnya dibaca lewat `daftarTertunda`.
       return {
         terkirim,
         tertundaSementara: tersisa.length - ditolakPermanen,

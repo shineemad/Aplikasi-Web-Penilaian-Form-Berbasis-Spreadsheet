@@ -455,8 +455,7 @@ function bacaMuatanPenilaian_(muatan) {
     };
   }
 
-  var kriteria = rapikanTeks_(muatan.kriteria);
-  if (typeof muatan.kriteria !== 'string' || kriteria === '') {
+  if (typeof muatan.kriteria !== 'string' || rapikanTeks_(muatan.kriteria) === '') {
     return {
       sah: false,
       pesan:
@@ -464,6 +463,15 @@ function bacaMuatanPenilaian_(muatan) {
         'kriteria manual yang sedang dinilai.',
     };
   }
+
+  // Hanya spasi tepi yang dibuang. `kriteria` adalah nama kolom asal, dan
+  // importer menyimpan nama kolom dengan `trim()` saja: merapatkan spasi ganda
+  // di sini mengubah "Q1  Saya puas" menjadi "Q1 Saya puas", yang tidak akan
+  // pernah cocok lagi dengan `kolom_asal` pada sheet Skema. Barisnya tetap
+  // tertulis, tetapi nilainya tidak bisa direkap kembali — dan cariYatim tidak
+  // melihatnya karena ia hanya memeriksa respondenId. Penolakan di atas tetap
+  // memakai bentuk rapat, supaya "   " ikut ditolak.
+  var kriteria = muatan.kriteria.trim();
 
   var nilai = '';
   if (muatan.nilai !== null && muatan.nilai !== undefined) {

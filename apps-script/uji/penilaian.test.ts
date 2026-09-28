@@ -402,15 +402,33 @@ describe('muatan yang tidak bisa disimpan ditolak, bukan ditambal', () => {
     expect(barisPenilaian(ss)).toHaveLength(0);
   });
 
-  it('merapikan spasi pada respondenId dan kriteria sebelum menyimpannya', () => {
-    // Aturan 4 repo. "K 1" dan "K  1" yang tersimpan apa adanya menjadi dua
-    // kriteria berbeda saat direkap, dan tidak ada yang akan menyadarinya.
+  it('menyimpan kriteria dengan trim saja, tanpa merapatkan spasi ganda', () => {
+    // Uji ini sebelumnya memancangkan kebalikannya, dengan alasan terbalik:
+    // komentarnya mengaku mencegah ketidakcocokan saat rekap, padahal justru
+    // menciptakannya. `kriteria` adalah nama kolom asal, dan
+    // `src/io/importerBerkas.ts` menyimpan nama kolom dengan `trim()` saja.
+    // Merapatkan spasi ganda di sini mengubah "Q1  Saya puas" — bentuk yang
+    // nyata pada data instrumen — menjadi "Q1 Saya puas", yang tidak akan
+    // pernah cocok lagi dengan `kolom_asal` pada sheet Skema. Barisnya tetap
+    // tertulis dan cariYatim tidak melihatnya, karena ia hanya memeriksa
+    // respondenId. `respondenId` sendiri tetap dirapatkan: ia hash heksadesimal
+    // 16 karakter yang tidak pernah memuat spasi di dalamnya.
     const { ss } = simpan({
-      muatan: { respondenId: ' a1 ', kriteria: 'Kriteria  Utama ', nilai: 80 },
+      muatan: { respondenId: ' a1 ', kriteria: ' Q1  Saya puas ', nilai: 80 },
     });
     const baris = barisPenilaian(ss)[0];
     expect(baris?.respondenId).toBe('a1');
-    expect(baris?.kriteria).toBe('Kriteria Utama');
+    expect(baris?.kriteria).toBe('Q1  Saya puas');
+  });
+
+  it('tetap menolak kriteria yang hanya berisi spasi dan tab', () => {
+    // Penolakan memakai bentuk rapat, jadi sel berisi spasi campur tab ikut
+    // tertangkap meski yang disimpan nanti hanya di-trim.
+    const { balasan, ss } = simpan({
+      muatan: { respondenId: 'a1', kriteria: '  \t ', nilai: 80 },
+    });
+    expect(balasan.kode).toBe('MUATAN_TIDAK_SAH');
+    expect(barisPenilaian(ss)).toHaveLength(0);
   });
 });
 

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
-import { buatStore } from './store';
-import type { Perintah, PerintahTertunda } from './store';
+import { buatStore, KODE_PERMANEN, KODE_SEMENTARA } from './store';
+import type { Perintah, PerintahTertunda, Store } from './store';
 
 function perintahUji(sebagian: Partial<Perintah> = {}): Perintah {
   return { aksi: 'simpanPenilaian', sesiId: 'S1', muatan: { respondenId: 'a1' }, ...sebagian };
@@ -164,7 +164,7 @@ describe('buatStore — kegagalan sementara dicoba ulang', () => {
 });
 
 describe('buatStore — kegagalan permanen berhenti dicoba ulang', () => {
-  it.each(['SESI_FINAL', 'BUKAN_ADMIN', 'MUATAN_TIDAK_SAH'])(
+  it.each(KODE_PERMANEN)(
     'berhenti mengirim ulang setelah %s tetapi tidak membuangnya',
     async (kode) => {
       const kirim = vi.fn(async () => ({ ok: false, kode, pesan: 'ditolak' }));
@@ -196,21 +196,97 @@ describe('buatStore — kegagalan permanen berhenti dicoba ulang', () => {
     expect(ringkasan.ditolakPermanen).toBe(1);
     expect(store.daftarTertunda()).toHaveLength(1);
   });
+
+  it.each(KODE_SEMENTARA)('mencoba %s lagi pada pengiriman berikutnya', async (kode) => {
+    // Pasangan tertutup dari KODE_PERMANEN. Tanpa uji ini, memindahkan satu
+    // kode dari daftar sementara ke daftar permanen (atau sebaliknya) tidak
+    // merahkan apa pun, padahal akibatnya berlawanan: penilaian yang masih
+    // bisa tersimpan berhenti dicoba, atau penolakan yang tidak akan pernah
+    // berubah dikirim ulang selamanya.
+    const kirim = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: false, kode, pesan: 'coba lagi' })
+      .mockResolvedValueOnce(SUKSES);
+    const store = buatStore({ kirim });
+    store.antre(perintahUji());
+
+    await store.kirimTertunda();
+    expect(store.daftarTertunda()[0]?.kegagalan?.sifat).toBe('sementara');
+
+    await store.kirimTertunda();
+    expect(store.daftarTertunda()).toHaveLength(0);
+    expect(kirim).toHaveBeenCalledTimes(2);
+  });
 });
 
 describe('buatStore — urutan antrean', () => {
-  it('mempertahankan urutan antrean saat sebagian gagal', async () => {
-    const store = buatStore({
-      kirim: async (perintah: Perintah) =>
-        perintah.sesiId === 'S2' ? SUKSES : { ok: false, kode: 'SEDANG_SIBUK' },
-    });
+  it('berhenti mengirim pada kegagalan sementara pertama', async () => {
+    // Uji ini sebelumnya memancangkan kebalikannya: S1 gagal sementara, S2 dan
+    // S3 tetap dikirim, dan antrean menyisakan ['S1','S3']. Perilaku itu salah,
+    // dan salahnya tidak kelihatan dari sini karena urutannya baru berbalik di
+    // server. `Penilaian` bersifat append-only dan C2 membuat baris yang tiba
+    // belakangan menang. Jadi bila penilai mengetik 80 lalu mengoreksinya
+    // menjadi 90, dan kiriman 80 kena SEDANG_SIBUK, meneruskan antrean
+    // mengirim 90 lebih dulu dan 80 menyusul pada percobaan berikutnya — yang
+    // berlaku kembali menjadi 80, tanpa satu pun tanda di layar. Karena itu
+    // kegagalan sementara pertama menghentikan pengiriman, dan seluruh sisanya
+    // disimpan apa adanya dalam urutan semula.
+    const kirim = vi.fn(async (perintah: Perintah) =>
+      perintah.sesiId === 'S1' ? { ok: false, kode: 'SEDANG_SIBUK' } : SUKSES,
+    );
+    const store = buatStore({ kirim });
     store.antre(perintahUji({ sesiId: 'S1' }));
     store.antre(perintahUji({ sesiId: 'S2' }));
     store.antre(perintahUji({ sesiId: 'S3' }));
 
     await store.kirimTertunda();
 
-    expect(store.daftarTertunda().map((satu) => satu.perintah.sesiId)).toEqual(['S1', 'S3']);
+    expect(kirim).toHaveBeenCalledTimes(1);
+    expect(store.daftarTertunda().map((satu) => satu.perintah.sesiId)).toEqual(['S1', 'S2', 'S3']);
+  });
+
+  it('tidak membalik koreksi ketika kiriman pertama gagal sementara', async () => {
+    // Bentuk lapangan dari uji di atas: 80 lalu dikoreksi menjadi 90. Yang
+    // dibuktikan bukan isi antrean, melainkan urutan yang benar-benar sampai
+    // ke server — di situlah baris terakhir menentukan nilai yang berlaku.
+    const diterima: number[] = [];
+    let gagalkanPertama = true;
+    const store = buatStore({
+      kirim: async (perintah: Perintah) => {
+        const muatan = perintah.muatan as { nilai: number };
+        if (muatan.nilai === 80 && gagalkanPertama) {
+          gagalkanPertama = false;
+          return { ok: false, kode: 'SEDANG_SIBUK' };
+        }
+        diterima.push(muatan.nilai);
+        return SUKSES;
+      },
+    });
+    store.antre(perintahUji({ muatan: { nilai: 80 } }));
+    store.antre(perintahUji({ muatan: { nilai: 90 } }));
+
+    await store.kirimTertunda();
+    await store.kirimTertunda();
+
+    expect(diterima).toEqual([80, 90]);
+    expect(store.daftarTertunda()).toHaveLength(0);
+  });
+
+  it('tidak menghentikan pengiriman karena penolakan permanen', async () => {
+    // Penolakan permanen tidak pernah terkirim, jadi ia tidak bisa mendarat
+    // sesudah penggantinya. Menghentikan antrean di situ hanya membekukan
+    // penilaian lain sampai ada yang membereskan perintah yang ditolak.
+    const kirim = vi.fn(async (perintah: Perintah) =>
+      perintah.sesiId === 'S1' ? { ok: false, kode: 'MUATAN_TIDAK_SAH' } : SUKSES,
+    );
+    const store = buatStore({ kirim });
+    store.antre(perintahUji({ sesiId: 'S1' }));
+    store.antre(perintahUji({ sesiId: 'S2' }));
+
+    await store.kirimTertunda();
+
+    expect(kirim).toHaveBeenCalledTimes(2);
+    expect(store.daftarTertunda().map((satu) => satu.perintah.sesiId)).toEqual(['S1']);
   });
 
   it('mengirim dalam urutan antre', async () => {
@@ -259,6 +335,43 @@ describe('buatStore — urutan antrean', () => {
     lepaskan();
     await pertama;
     expect(kirim).toHaveBeenCalledTimes(1);
+  });
+
+  it('tidak membuang perintah yang diantre selagi pengiriman berjalan', async () => {
+    // Penilai mengetik sementara pengiriman berjalan di latar belakang. Antrean
+    // yang ditimpa seluruhnya di akhir pengiriman membuang perintah itu tanpa
+    // pernah mengirimnya, dan layar tidak pernah menandainya belum tersimpan —
+    // pelanggaran langsung aturan 7.
+    let store: Store | undefined;
+    const kirim = vi.fn(async (perintah: Perintah) => {
+      if (perintah.sesiId === 'S1') store?.antre(perintahUji({ sesiId: 'SISIP' }));
+      return SUKSES;
+    });
+    store = buatStore({ kirim });
+    store.antre(perintahUji({ sesiId: 'S1' }));
+
+    await store.kirimTertunda();
+
+    expect(store.daftarTertunda().map((satu) => satu.perintah.sesiId)).toEqual(['SISIP']);
+
+    await store.kirimTertunda();
+    expect(store.daftarTertunda()).toHaveLength(0);
+  });
+
+  it('menyimpan perintah sisipan di belakang perintah yang gagal', async () => {
+    let store: Store | undefined;
+    const kirim = vi.fn(async (perintah: Perintah) => {
+      if (perintah.sesiId === 'S1') store?.antre(perintahUji({ sesiId: 'SISIP' }));
+      return { ok: false, kode: 'SEDANG_SIBUK' };
+    });
+    store = buatStore({ kirim });
+    store.antre(perintahUji({ sesiId: 'S1' }));
+
+    await store.kirimTertunda();
+
+    const daftar = store.daftarTertunda();
+    expect(daftar.map((satu) => satu.perintah.sesiId)).toEqual(['S1', 'SISIP']);
+    expect(daftar.map((satu) => satu.nomor)).toEqual([1, 2]);
   });
 });
 
