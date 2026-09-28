@@ -2,9 +2,18 @@
 
 > **Untuk pekerja agentik:** SUB-SKILL WAJIB: pakai `subagent-driven-development` (disarankan) atau `executing-plans` untuk mengerjakan rencana ini tugas demi tugas. Langkah memakai sintaks checkbox (`- [ ]`) untuk penanda kemajuan.
 
-**Tujuan:** Membangun modul **Store** dan backend **Apps Script** yang spec §5.2 syaratkan, beserta penegakan peran di sisi server (§9.2) dan finalisasi sesi. Setelah rencana ini, kriteria penerimaan §13 butir 4 (dua penilai dari perangkat berbeda tanpa data hilang) terpenuhi, dan butir 3 (uji keamanan §11.3) terbukti untuk seluruh kebijakannya — tetapi **belum** untuk deployment Google yang sesungguhnya. Batas itu dijelaskan di bawah dan tidak boleh dikaburkan.
+**Tujuan:** Membangun modul **Store** dan backend **Apps Script** yang spec §5.2 syaratkan, beserta penegakan peran di sisi server (§9.2) dan finalisasi sesi.
 
-**Arsitektur:** Kebijakan izin hidup di **satu tempat saja**, yaitu berkas `apps-script/Kode.gs` yang benar-benar di-deploy. Berkas itu diuji **di dalam proses** dengan `node:vm` dan global Google palsu, sehingga uji keamanan memanggil `doPost` secara langsung — bukan memeriksa tombol. Tidak ada bundler, tidak ada salinan, sehingga tidak ada celah bagi kebijakan yang diuji untuk melenceng dari kebijakan yang berjalan. Di sisi klien, `src/io/store.ts` memakai transport yang **disuntikkan**, sehingga rencana ini netral terhadap pilihan hosting.
+**Apa yang benar-benar terbukti setelah rencana ini** — ditulis sempit dengan sengaja:
+
+| Kriteria | Keadaan |
+| --- | --- |
+| §13 butir 3 (uji keamanan §11.3) | Terbukti untuk **kebijakannya**, dengan memanggil `doPost` secara langsung. **Belum** terbukti untuk sistem terpasangnya — menunggu protokol dijalankan dengan akun Google kedua. Lihat K6. |
+| §13 butir 4 (dua penilai tanpa data hilang) | Terbukti untuk **sisi server**: kunci eksklusif, izin diperiksa ulang di dalam kunci, nomor dibaca di dalam kunci, `flush` sebelum kunci dilepas. **Belum** terbukti untuk rantai Store → server → baca, untuk dua tab peramban, maupun untuk "perangkat berbeda" yang menuntut transport (C3). |
+
+Batas-batas itu tidak boleh dikaburkan.
+
+**Arsitektur:** Kebijakan izin hidup di **satu tempat saja**, yaitu berkas `apps-script/Kode.gs` yang akan di-deploy apa adanya. Berkas itu diuji **di dalam proses** dengan `node:vm` dan global Google palsu, sehingga uji keamanan memanggil `doPost` secara langsung — bukan memeriksa tombol. Tidak ada bundler, tidak ada salinan, sehingga tidak ada celah bagi kebijakan yang diuji untuk melenceng dari kebijakan yang berjalan. Di sisi klien, `src/io/store.ts` memakai transport yang **disuntikkan**, sehingga rencana ini netral terhadap pilihan hosting.
 
 **Tech Stack:** TypeScript (`strict` + `noUncheckedIndexedAccess`), Vitest, `node:vm` (bawaan Node), Google Apps Script (V8), Google Sheets.
 
@@ -84,7 +93,7 @@ Enam berikut lahir dari rencana ini.
 
 ## Koreksi terhadap spec
 
-Tiga hal diputuskan di sini. Dua yang pertama menuntut suntingan spec; yang ketiga menuntut keputusan pengguna sebelum Rencana UI dimulai.
+Tujuh hal dicatat di sini. Empat menuntut suntingan spec (C1, C2, C5, C7); tiga menuntut keputusan pengguna — **C3** sebelum Rencana UI dimulai, dan **C4** beserta **C6** yang bergantung padanya sebelum protokol keamanan dapat dinyatakan lulus.
 
 ### C1 — "Baris terakhir yang berlaku" tidak bisa dibaca harfiah
 
@@ -121,6 +130,69 @@ Dua jalan keluar:
 | **B. Tetap di Vercel + Google Identity Services** | §5.3 berlaku apa adanya, tetapi `getActiveUser()` tidak dipakai sama sekali; identitas berasal dari ID token yang harus diverifikasi sendiri di Apps Script. Lebih banyak kode, lebih banyak permukaan serang, dan §9.2 harus ditulis ulang. |
 
 **Rencana ini tidak memilih.** K3 membuatnya tidak perlu memilih. Tetapi **Rencana UI tidak boleh dimulai sebelum pengguna memutuskan**, karena pilihan ini menentukan bentuk seluruh lapisan transport.
+
+### C4 — §9.2 menuntut dua hal yang jarang bisa berlaku bersamaan (butuh keputusan pengguna)
+
+§9.2 menuntut dua hal sekaligus:
+
+1. identitas diambil dari `Session.getActiveUser().getEmail()`;
+2. **Spreadsheet Ruang Kerja tidak dibagikan kepada penilai maupun pengamat.**
+
+Mode deployment Apps Script menentukan keduanya, dan tidak ada satu mode pun yang memenuhi keduanya tanpa syarat tambahan:
+
+| Mode | Akibat pada butir 1 | Akibat pada butir 2 |
+| --- | --- | --- |
+| **Jalankan sebagai: Pengguna yang mengakses** | `getActiveUser()` berisi email pemanggil | **Patah.** Skrip menyentuh Spreadsheet dengan izin pemanggil, jadi Spreadsheet **harus** dibagikan kepada setiap penilai — tepat anti-pola yang §9.2 larang |
+| **Jalankan sebagai: Saya (pemilik)** | Berisi email **hanya** bila pemanggil berada di domain Google Workspace yang sama dengan pemilik skrip; untuk akun gmail pribadi hasilnya string kosong | Berlaku apa adanya |
+
+Jadi §9.2 hanya utuh bila **ketiganya** benar: mode "Jalankan sebagai: Saya", akses dibatasi ke domain Workspace institusi, dan **setiap** penilai serta pengamat punya akun di domain itu. Bila ada satu penilai yang memakai gmail pribadi, seluruh permintaannya jatuh ke `TANPA_IDENTITAS` dan sistem terkunci untuknya.
+
+Pertentangan ini **tidak** diselesaikan di sini, dan pesan error pun tidak boleh meresepkan salah satu mode — pesan `TANPA_IDENTITAS` sempat menyuruh pembacanya memilih "Pengguna yang mengakses", yang berarti menuntun orang mematahkan §9.2 sambil mengira sedang memperbaikinya.
+
+Yang harus diputuskan pengguna:
+
+- Apakah institusi punya Google Workspace, dan apakah **seluruh** penilai serta pengamat punya akun di domain itu?
+- Bila tidak: klausul §9.2 yang mana yang ditulis ulang — sumber identitasnya, atau larangan berbagi Spreadsheet?
+
+Perhatikan ini **tidak** selesai dengan memilih jalan A pada C3. Menyajikan UI dari Apps Script menyelesaikan soal transport, bukan soal mode deployment.
+
+**Tidak terbuktikan di sandbox.** `node:vm` tidak tahu apa yang Google kembalikan pada tiap mode. Ini harus dibuktikan pada deployment sungguhan dari akun kedua (Tugas 7), dan sampai itu terjadi §13 butir 3 tetap dicatat belum terbukti (K6).
+
+### C5 — peran `pengamat` di luar V1 (diputuskan)
+
+§9.1 menyebut tiga peran: Admin, Penilai, dan **Pengamat** yang boleh membaca rekap dan tidak boleh menulis apa pun. §9.3 memperkuatnya dengan menuntut rekap untuk pengamat memakai `id`, bukan email. Tetapi §6.4 hanya memberi sheet `Sesi` dua kolom peran: `penilai` dan `admin`. Tidak ada tempat menuliskan siapa pengamatnya.
+
+**Keputusan:** pengamat **di luar V1**. Ini bukan pilihan bebas — spec sudah menjawabnya sendiri: §12.1 "Dibangun sekarang" hanya menyebut "Peran admin dan penilai". Mencatatnya sebagai pertanyaan terbuka adalah kekeliruan pembacaan, bukan kehati-hatian.
+
+Akibatnya harus ditanggung dengan mata terbuka: permintaan "boleh lihat rekapnya saja" belum punya jawaban selain menambahkan orang itu ke kolom `penilai`, yang sama dengan memberi hak **tulis** ke `Penilaian`. Peran yang tidak punya tempat penyimpanan tidak menjadi tidak ada; ia menjadi peran yang lebih tinggi. Itu masuk daftar yang ditunda, dan **§9.1 serta §9.3 perlu disunting** agar tidak menjanjikan peran yang tidak dibangun.
+
+`SYARAT_AKSI` di `Kode.gs` sengaja tidak menyebut `pengamat` sama sekali, dan alasannya ditulis di berkas itu supaya tidak terbaca sebagai kelalaian.
+
+### C6 — siapa yang boleh menyiapkan ruang kerja (diputuskan, dengan syarat)
+
+Spec tidak menjawabnya. §9.1 tidak menyebut penyiapan sebagai aksi, dan §6.4 hanya menyimpan admin **per sesi** — bukan admin ruang kerja. Lingkarannya nyata: penyiapan membuat sheet `Sesi`, sedangkan daftar admin dibaca **dari** sheet itu. Aturan yang hanya bertanya "apakah dia admin?" membuat penyiapan pertama mustahil; aturan yang menyerah membuat siapa pun bisa menyiapkan ruang kerja orang lain.
+
+**Keputusan:** boleh menyiapkan = **pemilik Spreadsheet** (`getOwner()`) **∪** setiap email pada kolom `admin` sheet `Sesi`. Pemilik dipakai karena ia satu-satunya identitas yang sudah ada sebelum data apa pun ada. Bila pemilik tidak terbaca **dan** belum ada admin, permintaan ditolak dengan `PEMILIK_TIDAK_DIKETAHUI` — gagal menutup, bukan membuka.
+
+**Syarat yang membuat keputusan ini sah:** perluasan ke "admin sesi mana pun" hanya benar selama **penyiapan bersifat aditif** — ia boleh membuat sheet yang belum ada dan menambah kepala kolom yang hilang, tetapi tidak boleh menimpa isi yang sudah ada. Begitu penyiapan bisa menimpa, admin sesi mana pun dapat merusak sesi milik orang lain. Syarat ini ditegakkan uji yang membandingkan **isi** sheet sebelum dan sesudah, bukan sekadar jumlah barisnya.
+
+**C6 bergantung pada C4.** Pada mode "Jalankan sebagai: Pengguna yang mengakses", `getOwner()` menuntut pemanggil punya akses ke Spreadsheet — persis yang §9.2 larang. Aturan ini hanya utuh pada mode "Jalankan sebagai: Saya". Jadi C6 ikut menunggu jawaban atas C4.
+
+### C7 — server tidak memeriksa isi penilaian terhadap data lain (butuh keputusan pengguna)
+
+Backend menerima `simpanPenilaian` tanpa memeriksa tiga hal:
+
+- `nilai` tidak diuji terhadap rentang pada `Skema` (`skor_maks`, atau rentang manual di `parameter`)
+- `respondenId` tidak diperiksa keberadaannya di sheet `Responden`
+- `kriteria` tidak diperiksa keberadaannya di sheet `Skema`
+
+Akibatnya satu salah ketik menghasilkan **baris yatim** yang tetap dijawab tersimpan. Aturan 3 repo menuntut berisik saat ragu, dan ini diam.
+
+Yang menahan keputusan ini bukan kesulitan teknis melainkan biayanya: memeriksa ketiganya berarti membaca dua sheet tambahan **di dalam kunci** pada setiap penulisan, sehingga penulisan menjadi lebih lambat justru pada operasi yang paling sering dilakukan penilai. Ada pula pertanyaan urutan: penilaian manual kadang ditulis untuk kriteria yang memang belum ada di `Skema` (§7.1 aturan `manual`).
+
+**Rencana ini tidak memilih.** Tetapi **Tugas 5 harus tahu cara memperlakukan baris yatim**, karena `nilaiBerlaku` akan menemuinya: baris dengan `respondenId` yang tidak ada di daftar responden mana pun. Menjatuhkannya diam-diam melanggar instruksi repo ("spec menuntut baris ditandai, bukan dihilangkan").
+
+**Catatan kunci untuk Tugas 5.** §6.3 menyebut nilai yang berlaku ditentukan pasangan (`responden_id`, `kriteria`), sedangkan `.github/copilot-instructions.md` menyebut (`sesi_id`, `responden_id`, `kriteria`). Yang benar adalah yang memuat `sesi_id`: tanpa itu, nilai seorang responden pada Pre-Test akan ditimpa nilainya pada Post-Test, dan seluruh kolom `selisih` menjadi kosong tanpa ada yang menyadarinya. Spec §6.3 disunting di Tugas 7.
 
 ---
 
@@ -170,7 +242,7 @@ Jalankan `npm test` dan `npm run typecheck`; keduanya harus tetap hijau (391 uji
 `apps-script/uji/googlePalsu.ts` menyediakan:
 
 - `buatSpreadsheetPalsu(isiAwal: Record<string, unknown[][]>)` → objek dengan `getSheetByName`, `insertSheet`, `getSheets`. Tiap sheet punya `getDataRange().getValues()`, `getRange(baris, kolom)`, `appendRow`, `getLastRow`, `getName`.
-- `buatLockPalsu()` → mencatat berapa kali `waitLock` dan `releaseLock` dipanggil, sehingga uji dapat membuktikan kunci selalu dilepas.
+- `buatLockPalsu()` → mencatat berapa kali `waitLock` dan `releaseLock` dipanggil, sehingga uji dapat membuktikan kunci selalu dilepas. `buatLockServicePalsu()` membungkus **satu** lock dan mengembalikannya pada setiap `getScriptLock`, supaya uji memegang lock yang benar-benar dipakai `Kode.gs`; menyuntikkan `getScriptLock: buatLockPalsu` memberi objek baru tiap pemanggilan dan membuat Batasan Global 19 mustahil dibuktikan.
 - `buatSessionPalsu(email: string)`.
 - `ContentService` palsu yang menyimpan teks dan MIME agar uji dapat membaca balasan.
 
@@ -232,7 +304,9 @@ Hanya `doPost` yang mengembalikan penolakan untuk aksi tak dikenal. Belum ada ke
 
 Ini inti rencana. Seluruh §11.3 dibuktikan di sini dengan memanggil `doPost` langsung.
 
-Tabel peran §9.1 diterjemahkan menjadi satu fungsi `putuskanIzin_(emailSesi, aksi, sesi)` yang mengembalikan `{izin:true}` atau `{izin:false, kode, pesan}`. Kode kesalahan yang dipakai: `TANPA_IDENTITAS`, `TIDAK_DIKENAL`, `BUKAN_ADMIN`, `SESI_FINAL`, `SESI_TIDAK_ADA`, `MUATAN_TIDAK_SAH`.
+Tabel peran §9.1 diterjemahkan menjadi satu fungsi `putuskanIzin_(emailSesi, aksi, sesi)` yang mengembalikan `{izin:true}` atau `{izin:false, kode, pesan}`. Kode kesalahan yang dipakai: `TANPA_IDENTITAS`, `ORANG_TIDAK_DIKENAL`, `BUKAN_ADMIN`, `SESI_FINAL`, `SESI_TIDAK_ADA`, `MUATAN_TIDAK_SAH`.
+
+Namanya `ORANG_TIDAK_DIKENAL`, bukan `TIDAK_DIKENAL`, karena `TIDAK_DIKENAL` adalah substring dari `AKSI_TIDAK_DIKENAL`: satu `kode.includes('TIDAK_DIKENAL')` di frontend akan menyamakan "Anda bukan siapa-siapa di sesi ini" dengan "aksi ini tidak ada".
 
 **Helper `panggil` yang dipakai seluruh uji di bawah** dibuat lebih dulu di berkas uji ini. Ia merakit sandbox, menyiapkan sheet `Sesi` berisi satu sesi bawaan, lalu memanggil `doPost` sungguhan:
 
@@ -249,8 +323,8 @@ function panggil(opsi: {
   const konteks = muatKode({
     Session: buatSessionPalsu(opsi.email),
     SpreadsheetApp: { getActive: () => ss },
-    LockService: { getScriptLock: buatLockPalsu },
-    ContentService: contentServicePalsu(),
+    LockService: buatLockServicePalsu(),
+    ContentService: buatContentServicePalsu(),
   });
   const keluaran = (konteks.doPost as Function)({
     postData: { contents: JSON.stringify({ aksi: opsi.aksi, sesiId: sesi.sesiId, muatan: opsi.muatan ?? {} }) },
@@ -283,7 +357,7 @@ it('menolak penulisan ke sesi berstatus final', () => {
 
 it('menolak email di luar daftar', () => {
   const { balasan } = panggil({ email: 'orangluar@gmail.com', aksi: 'bacaRekap' });
-  expect(balasan.kode).toBe('TIDAK_DIKENAL');
+  expect(balasan.kode).toBe('ORANG_TIDAK_DIKENAL');
 });
 ```
 
@@ -294,7 +368,7 @@ Ketiganya adalah cara sistem ini bisa tampak aman padahal tidak:
 ```ts
 it('menolak identitas kosong dengan kode tersendiri', () => {
   // Deployment "siapa saja, bahkan anonim" membuat getActiveUser() kosong.
-  // Bila ini jatuh ke TIDAK_DIKENAL, salah setel deployment akan tersamar
+  // Bila ini jatuh ke ORANG_TIDAK_DIKENAL, salah setel deployment akan tersamar
   // sebagai penolakan peran biasa dan tidak pernah tertangkap.
   const { balasan } = panggil({ email: '', aksi: 'bacaRekap' });
   expect(balasan.kode).toBe('TANPA_IDENTITAS');
@@ -350,12 +424,26 @@ it('mengambil kolom oleh dari sesi Google, bukan dari muatan', () => {
   expect(barisPenilaian()[0].oleh).toBe('penilai@kampus.id');
 });
 
-it('melepas kunci walau penulisan gagal', () => {
+it('melepas kunci walau penulisan gagal setelah kunci terambil', () => {
   // LockService yang tidak dilepas akan membekukan seluruh sistem sampai
   // batas waktunya habis. Jalur gagal justru yang paling sering lupa.
-  const lock = buatLockPalsu();
-  simpanYangGagal(lock);
-  expect(lock.jumlahLepas).toBe(lock.jumlahAmbil);
+  const lockService = buatLockServicePalsu();
+  simpanYangGagal(lockService);
+  expect(lockService.lock.jumlahAmbil).toBe(1);
+  expect(lockService.lock.jumlahLepas).toBe(1);
+});
+
+it('menolak dengan pesan yang mengajari bila kunci tidak bisa diambil', () => {
+  // JANGAN menulis `jumlahLepas === jumlahAmbil` di sini. `waitLock` yang
+  // melempar tidak pernah menambah `jumlahAmbil`, sehingga implementasi yang
+  // BENAR (melepas di `finally`) menghasilkan 1 lepas atas 0 ambil dan uji
+  // seperti itu justru merah. Yang diperiksa: permintaan ditolak, bukan
+  // dianggap tersimpan.
+  const lockService = buatLockServicePalsu({ gagalkanWaitLock: true });
+  const { balasan } = simpan({ lockService });
+  expect(balasan.ok).toBe(false);
+  expect(lockService.lock.jumlahAmbil).toBe(0);
+  expect(barisPenilaian()).toHaveLength(0);
 });
 
 it('dua penulis bersamaan sama-sama tersimpan', () => {
@@ -521,7 +609,7 @@ Tugas ini tidak menambah kode. Ia mencegah klaim yang lebih besar daripada bukti
 
 Protokol memuat, dalam urutan yang dapat diikuti tanpa menebak:
 
-1. **Setelan deployment yang benar** — "Jalankan sebagai: Pengguna yang mengakses", "Siapa yang punya akses: siapa saja dengan Akun Google" (atau dibatasi domain). Sertakan peringatan bahwa memilih anonim membuat `getActiveUser()` kosong dan seluruh penegakan peran runtuh.
+1. **Kedua mode deployment, tanpa meresepkan salah satunya.** Lihat C4: rencana ini sengaja tidak memilih, dan protokol justru bertugas **membuktikan** mana yang berlaku. Tuliskan apa yang masing-masing mode kembalikan dari `Session.getActiveUser().getEmail()` dan mengapa keduanya bertabrakan dengan §9.2. Sertakan peringatan bahwa memilih akses anonim membuat `getActiveUser()` kosong dan seluruh penegakan peran runtuh — backend menolaknya dengan `TANPA_IDENTITAS`, dan protokol harus memeriksa bahwa kode itulah yang muncul.
 2. **Pemeriksaan §9.2 yang tidak bisa diotomatiskan:** Spreadsheet Ruang Kerja **tidak** dibagikan kepada penilai maupun pengamat. Langkahnya: buka menu Bagikan, pastikan hanya admin yang terdaftar. Bila Spreadsheet dibagikan, seluruh pengaturan peran menjadi hiasan.
 3. **Empat uji §11.3 terhadap deployment sungguhan,** masing-masing dengan akun yang menjalankan, langkah persis, dan balasan yang diharapkan — termasuk kode kesalahannya.
 4. **Tempat mencatat bukti** — tanggal, akun, dan balasan apa adanya.

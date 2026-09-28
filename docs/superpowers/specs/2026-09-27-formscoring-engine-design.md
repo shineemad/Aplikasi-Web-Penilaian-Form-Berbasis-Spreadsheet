@@ -190,6 +190,16 @@ Satu baris per kolom yang dinilai.
 
 Menulis nilai baru **menambah baris**, tidak menimpa baris lama. Nilai yang berlaku adalah baris terakhir untuk pasangan (`responden_id`, `kriteria`). Satu keputusan ini menyelesaikan empat hal sekaligus: jejak audit lengkap, dua penilai yang bekerja bersamaan tidak saling menghapus, pembatalan menjadi mungkin, dan perbedaan pendapat antar penilai terlihat alih-alih tersembunyi.
 
+Tiga hal pada paragraf di atas tidak dapat dibaca harfiah.
+
+**Kuncinya memuat `sesi_id`.** Pasangan yang menentukan nilai berlaku adalah (`sesi_id`, `responden_id`, `kriteria`), bukan (`responden_id`, `kriteria`). Orang yang sama muncul di setiap sesi yang diikutinya dengan `responden_id` yang sama (§6.1), dan kriteria yang dinilai biasanya juga sama antara Pre-Test dan Post-Test. Tanpa `sesi_id` pada kunci, nilai Pre-Test seseorang akan ditimpa nilai Post-Test-nya, dan seluruh kolom `selisih` (§8.4) menjadi kosong tanpa ada yang menyadarinya.
+
+**`nilai` dan `catatan` diselesaikan terpisah.** Dibaca harfiah, "baris terakhir yang berlaku" bertabrakan dengan "`nilai` boleh kosong bila hanya catatan": penilai yang menambahkan catatan pada kriteria yang sudah bernilai 80 akan menghapus angka itu, karena baris terakhirnya bernilai kosong. Karena itu nilai yang berlaku adalah baris terakhir yang `nilai`-nya **tidak** kosong, dan catatan yang berlaku adalah baris terakhir yang `catatan`-nya **tidak** kosong. Satu baris boleh mengisi salah satu atau keduanya; catatan menambah keterangan, bukan menarik angka. Akibatnya, klaim "pembatalan menjadi mungkin" di atas terlalu besar — yang benar-benar mungkin adalah **mengoreksi** angka dengan angka lain. Mengosongkan kembali menuntut penanda pembatalan eksplisit dan ditunda ke luar V1.
+
+**Urutan "terakhir" ditentukan `penilaian_id`, bukan `pada`.** Dua penilai yang menulis dalam detik yang sama menghasilkan cap waktu identik, sehingga "yang terakhir" bergantung pada urutan pembacaan dan tidak tertentu. `penilaian_id` adalah nomor urut yang diberikan server di dalam `LockService`, jadi urutannya total dan tidak pernah seri. `pada` tetap dicatat untuk jejak audit, tetapi tidak pernah dipakai mengurutkan.
+
+(Koreksi terhadap rumusan awal spec ini, diputuskan saat menyusun rencana "Store, Apps Script, dan Peran".)
+
 ### 6.4 `Sesi`
 
 | Kolom       | Isi                                   |
@@ -354,6 +364,14 @@ Pada V1, seluruh penilai ditugaskan ke seluruh responden. Struktur datanya sudah
 
 Konsekuensi yang wajib dipatuhi: **Spreadsheet Ruang Kerja tidak dibagikan kepada penilai maupun pengamat.** Akses mereka hanya melalui Web App. Bila Spreadsheet dibagikan langsung, seluruh pengaturan peran di atas menjadi hiasan belaka.
 
+**Mode deployment menentukan apakah kedua tuntutan di atas dapat berlaku bersamaan.** Web App yang dideploy dengan akses "siapa saja, bahkan anonim" membuat `Session.getActiveUser().getEmail()` mengembalikan string kosong, sehingga tidak ada identitas yang bisa dicocokkan dengan sheet `Sesi` dan seluruh penegakan peran runtuh. Backend menolak email kosong dengan **kode kesalahan tersendiri**, `TANPA_IDENTITAS`, bukan dengan kode penolakan peran biasa: bila salah setel jatuh ke kode yang sama dengan "orang ini tidak terdaftar", ia akan terbaca sebagai penolakan yang wajar dan tidak pernah tertangkap.
+
+Yang **belum diputuskan**: mode "Jalankan sebagai: Pengguna yang mengakses" memenuhi tuntutan identitas tetapi mengharuskan Spreadsheet dibagikan kepada setiap penilai — tepat yang paragraf sebelumnya larang; sedangkan mode "Jalankan sebagai: Saya" memenuhi larangan berbagi tetapi hanya mengembalikan email bagi pemanggil di domain Google Workspace yang sama dengan pemilik skrip, sehingga penilai berakun gmail pribadi terkunci sebagai `TANPA_IDENTITAS`. Pertentangan ini dicatat sebagai koreksi **C4** pada rencana "Store, Apps Script, dan Peran" dan menunggu keputusan pengguna: apakah seluruh penilai dan pengamat punya akun di satu domain Workspace, dan bila tidak, klausul §9.2 mana yang ditulis ulang — sumber identitasnya, atau larangan berbagi Spreadsheet. Sampai itu diputuskan, spec ini **tidak meresepkan satu mode**, dan pesan `TANPA_IDENTITAS` pun dilarang menyebut salah satunya.
+
+Setelan mana yang sesungguhnya berlaku tidak dapat dibuktikan uji otomatis; begitu pula pemeriksaan berbagi Spreadsheet di atas. Keduanya dijalankan manusia menurut [protokol-keamanan.md](../protokol-keamanan.md), dengan akun Google kedua.
+
+(Koreksi terhadap rumusan awal spec ini, diputuskan saat menyusun rencana "Store, Apps Script, dan Peran".)
+
 Penulisan dibungkus `LockService` untuk mencegah tabrakan. Dengan pola append-only, tabrakan jarang terjadi dan tidak merusak data.
 
 ### 9.3 Perlindungan data pribadi
@@ -484,7 +502,7 @@ Risiko yang harus diperhatikan sejak awal:
 
 1. Mengimpor 500 baris — termasuk baris tanpa nama dan baris berjawaban kosong — ke dalam daftar penilaian tanpa error.
 2. Seluruh kasus uji pada §11.1 lulus.
-3. Seluruh kasus uji keamanan pada §11.3 lulus.
+3. Seluruh kasus uji keamanan pada §11.3 lulus — **terbukti untuk kebijakannya, belum untuk sistem terpasangnya.** Keempat kasus diuji dengan memanggil `doPost` secara langsung terhadap berkas backend yang benar-benar di-deploy, sehingga yang terbukti adalah kebijakan izinnya. Yang belum terbukti adalah perilaku Google: siapa yang sesungguhnya dikembalikan `Session.getActiveUser().getEmail()` pada tiap mode deployment (§9.2), dan apakah Spreadsheet Ruang Kerja benar-benar tidak dibagikan. Pembuktiannya menunggu [protokol-keamanan.md](../protokol-keamanan.md) dijalankan dengan akun Google kedua; sampai tabel buktinya terisi, butir ini tidak boleh dicatat lulus seutuhnya. (Koreksi terhadap rumusan awal spec ini, diputuskan saat menyusun rencana "Store, Apps Script, dan Peran".)
 4. Dua penilai dapat mengisi nilai dari perangkat berbeda tanpa ada data yang hilang.
 5. Ekspor Excel dan PDF menghasilkan angka yang identik dengan tampilan layar.
 6. Ekspor mode anonim tidak memuat email maupun nama.
