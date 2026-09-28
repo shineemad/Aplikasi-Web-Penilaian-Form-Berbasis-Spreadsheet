@@ -84,7 +84,7 @@ Enam berikut lahir dari rencana ini.
 
 ## Koreksi terhadap spec
 
-Tiga hal diputuskan di sini. Dua yang pertama menuntut suntingan spec; yang ketiga menuntut keputusan pengguna sebelum Rencana UI dimulai.
+Lima hal dicatat di sini. Dua yang pertama menuntut suntingan spec; tiga sisanya menuntut keputusan pengguna — C3 sebelum Rencana UI dimulai, C4 dan C5 sebelum Tugas 7 dapat dinyatakan lulus.
 
 ### C1 — "Baris terakhir yang berlaku" tidak bisa dibaca harfiah
 
@@ -121,6 +121,50 @@ Dua jalan keluar:
 | **B. Tetap di Vercel + Google Identity Services** | §5.3 berlaku apa adanya, tetapi `getActiveUser()` tidak dipakai sama sekali; identitas berasal dari ID token yang harus diverifikasi sendiri di Apps Script. Lebih banyak kode, lebih banyak permukaan serang, dan §9.2 harus ditulis ulang. |
 
 **Rencana ini tidak memilih.** K3 membuatnya tidak perlu memilih. Tetapi **Rencana UI tidak boleh dimulai sebelum pengguna memutuskan**, karena pilihan ini menentukan bentuk seluruh lapisan transport.
+
+### C4 — §9.2 menuntut dua hal yang jarang bisa berlaku bersamaan (butuh keputusan pengguna)
+
+§9.2 menuntut dua hal sekaligus:
+
+1. identitas diambil dari `Session.getActiveUser().getEmail()`;
+2. **Spreadsheet Ruang Kerja tidak dibagikan kepada penilai maupun pengamat.**
+
+Mode deployment Apps Script menentukan keduanya, dan tidak ada satu mode pun yang memenuhi keduanya tanpa syarat tambahan:
+
+| Mode | Akibat pada butir 1 | Akibat pada butir 2 |
+| --- | --- | --- |
+| **Jalankan sebagai: Pengguna yang mengakses** | `getActiveUser()` berisi email pemanggil | **Patah.** Skrip menyentuh Spreadsheet dengan izin pemanggil, jadi Spreadsheet **harus** dibagikan kepada setiap penilai — tepat anti-pola yang §9.2 larang |
+| **Jalankan sebagai: Saya (pemilik)** | Berisi email **hanya** bila pemanggil berada di domain Google Workspace yang sama dengan pemilik skrip; untuk akun gmail pribadi hasilnya string kosong | Berlaku apa adanya |
+
+Jadi §9.2 hanya utuh bila **ketiganya** benar: mode "Jalankan sebagai: Saya", akses dibatasi ke domain Workspace institusi, dan **setiap** penilai serta pengamat punya akun di domain itu. Bila ada satu penilai yang memakai gmail pribadi, seluruh permintaannya jatuh ke `TANPA_IDENTITAS` dan sistem terkunci untuknya.
+
+Pertentangan ini **tidak** diselesaikan di sini, dan pesan error pun tidak boleh meresepkan salah satu mode — pesan `TANPA_IDENTITAS` sempat menyuruh pembacanya memilih "Pengguna yang mengakses", yang berarti menuntun orang mematahkan §9.2 sambil mengira sedang memperbaikinya.
+
+Yang harus diputuskan pengguna:
+
+- Apakah institusi punya Google Workspace, dan apakah **seluruh** penilai serta pengamat punya akun di domain itu?
+- Bila tidak: klausul §9.2 yang mana yang ditulis ulang — sumber identitasnya, atau larangan berbagi Spreadsheet?
+
+Perhatikan ini **tidak** selesai dengan memilih jalan A pada C3. Menyajikan UI dari Apps Script menyelesaikan soal transport, bukan soal mode deployment.
+
+**Tidak terbuktikan di sandbox.** `node:vm` tidak tahu apa yang Google kembalikan pada tiap mode. Ini harus dibuktikan pada deployment sungguhan dari akun kedua (Tugas 7), dan sampai itu terjadi §13 butir 3 tetap dicatat belum terbukti (K6).
+
+### C5 — peran `pengamat` tidak punya tempat penyimpanan (butuh keputusan pengguna)
+
+§9.1 menyebut tiga peran: Admin, Penilai, dan **Pengamat** yang boleh membaca rekap dan tidak boleh menulis apa pun. §9.3 memperkuatnya dengan menuntut rekap untuk pengamat memakai `id`, bukan email.
+
+Tetapi §6.4 hanya memberi sheet `Sesi` dua kolom peran: `penilai` dan `admin`. Tidak ada tempat menuliskan siapa pengamatnya.
+
+Akibatnya bukan sekadar fitur yang hilang, melainkan tekanan ke arah yang salah: pengamat selalu ditolak sebagai `ORANG_TIDAK_DIKENAL`, dan admin yang ingin memberi akses baca hanya punya satu jalan yang tersedia — menambahkan orang itu ke kolom `penilai`. Itu sama dengan memberinya hak **tulis** ke `Penilaian`. Peran yang tidak punya tempat penyimpanan tidak menjadi tidak ada; ia menjadi peran yang lebih tinggi.
+
+Dua jalan keluar, keduanya menyunting spec:
+
+| Jalan | Akibat |
+| --- | --- |
+| **A. Tambah kolom `pengamat` pada §6.4** | §9.1 dan §9.3 berlaku apa adanya. `KOLOM_SESI_WAJIB` bertambah satu, dan seluruh sheet `Sesi` yang sudah ada harus ditambahi kolom itu — tanpa itu, kebijakan menolak seluruh sesi lama sebagai `SESI_CACAT`. |
+| **B. Buang `pengamat` dari V1** | §9.1 dan §9.3 ditulis ulang. Jujur terhadap yang benar-benar dibangun, tetapi permintaan "boleh lihat rekapnya saja" tidak punya jawaban selain memberi hak tulis. |
+
+**Rencana ini tidak memilih.** Sampai diputuskan, `SYARAT_AKSI` di `Kode.gs` sengaja tidak menyebut `pengamat` sama sekali, dan alasannya ditulis di berkas itu supaya tidak terbaca sebagai kelalaian.
 
 ---
 
