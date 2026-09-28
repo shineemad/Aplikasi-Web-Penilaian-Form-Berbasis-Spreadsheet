@@ -38,6 +38,33 @@ export interface SpreadsheetPalsu {
   getOwner(): PenggunaPalsu | null;
 }
 
+/**
+ * Permukaan `SpreadsheetApp` yang dipakai Kode.gs.
+ *
+ * `flush` ada di sini karena Apps Script menunda penulisan: tanpa memanggilnya,
+ * baris yang baru ditambahkan bisa belum terlihat oleh eksekusi berikutnya,
+ * sehingga nomor penilaian berikutnya dihitung dari kisi yang belum lengkap.
+ */
+export interface SpreadsheetAppPalsu {
+  getActive(): SpreadsheetPalsu;
+  flush(): void;
+}
+
+/**
+ * Sel yang isinya ditafsirkan Sheets sebagai rumus, bukan sebagai teks.
+ *
+ * Dimodelkan sebagai objek tersendiri supaya kebocorannya terlihat: sel yang
+ * menyimpan `{ rumus: '=Sesi!H2' }` jelas bukan catatan yang diketik penilai,
+ * sedangkan teks '=Sesi!H2' yang tersimpan apa adanya tidak bisa dibedakan.
+ */
+export interface RumusPalsu {
+  rumus: string;
+}
+
+export function adalahRumus(sel: unknown): sel is RumusPalsu {
+  return typeof sel === 'object' && sel !== null && typeof (sel as RumusPalsu).rumus === 'string';
+}
+
 export interface OpsiSpreadsheet {
   /**
    * Bawaannya null — ruang kerja tanpa pemilik yang tercatat, seperti berkas
@@ -64,9 +91,35 @@ export interface LockServicePalsu {
   lock: LockPalsu;
 }
 
+/**
+ * Kunci skrip Apps Script berlaku untuk seluruh proyek, bukan per eksekusi.
+ * Dua eksekusi bersamaan memegang objek `Lock` yang berbeda tetapi memperebutkan
+ * kunci yang sama; keadaan itulah yang dititipkan di sini. Tanpa keadaan
+ * bersama, permintaan kedua yang menyela tetap mendapat kunci dan §13 butir 4
+ * tidak pernah benar-benar diuji.
+ */
+export interface KeadaanKunci {
+  dipegang: LockPalsu | null;
+}
+
+export function buatKeadaanKunci(): KeadaanKunci {
+  return { dipegang: null };
+}
+
 export interface OpsiLock {
   /** Meniru Google saat batas waktu habis: waitLock melempar, bukan mengembalikan false. */
   batasWaktuHabis?: boolean;
+  /** Keadaan kunci yang dibagi beberapa eksekusi; tanpa ini tiap lock berdiri sendiri. */
+  bersama?: KeadaanKunci;
+  /**
+   * Dijalankan sekali di dalam `waitLock`, SEBELUM kunci diambil, untuk
+   * menyisipkan permintaan lain persis saat pemanggil ini sedang menunggu
+   * giliran. Itulah satu-satunya cara menyimulasikan balapan sungguhan pada
+   * runtime yang berjalan satu utas.
+   */
+  sela?: () => void;
+  /** Jurnal bersama, untuk membuktikan urutan flush terhadap releaseLock. */
+  jejak?: string[];
 }
 
 export interface SessionPalsu {
@@ -94,10 +147,24 @@ function selDari(baris: unknown[] | undefined, indeks: number): unknown {
 // "Infinity", atau "1_000" sebagai angka.
 const POLA_ANGKA = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/;
 
-/** Sheets memaksa tipe sel seperti saat manusia mengetiknya, bukan menyimpan apa adanya. */
+/**
+ * Sheets memaksa tipe sel seperti saat manusia mengetiknya, bukan menyimpan apa
+ * adanya. Tiga tafsir yang berlaku, berurutan:
+ *
+ * 1. apostrof di depan berarti "simpan sisanya apa adanya sebagai teks";
+ *    apostrofnya sendiri tidak ikut tersimpan dan tidak muncul di getValues;
+ * 2. tanda sama dengan di depan menjadikan selnya rumus, bukan teks;
+ * 3. sisanya yang berbentuk angka menjadi angka — termasuk "0012345678901234"
+ *    yang menjadi 12345678901234 dan "12e4567890123456" yang menjadi Infinity.
+ *
+ * Awalan `+`, `-`, dan `@` sengaja TIDAK ditafsirkan di sini: belum terbukti
+ * bagaimana Sheets memperlakukannya, dan menebaknya berarti menguji tebakan.
+ */
 function selSepertiSheets(nilai: unknown): unknown {
   if (nilai === null || nilai === undefined) return '';
   if (typeof nilai !== 'string') return nilai;
+  if (nilai.charAt(0) === "'") return nilai.slice(1);
+  if (nilai.charAt(0) === '=') return { rumus: nilai };
   const rapat = nilai.trim();
   return POLA_ANGKA.test(rapat) ? Number(rapat) : nilai;
 }
@@ -246,6 +313,8 @@ export function sheetWajib(ss: SpreadsheetPalsu, nama: string): SheetPalsu {
 }
 
 export function buatLockPalsu(opsi: OpsiLock = {}): LockPalsu {
+  const bersama = opsi.bersama === undefined ? buatKeadaanKunci() : opsi.bersama;
+  let selaTerpakai = false;
   const lock: LockPalsu = {
     jumlahAmbil: 0,
     jumlahLepas: 0,
@@ -253,12 +322,28 @@ export function buatLockPalsu(opsi: OpsiLock = {}): LockPalsu {
       if (opsi.batasWaktuHabis === true) {
         throw new Error(`Tidak bisa mengambil kunci setelah ${String(batasMs)} ms.`);
       }
+      // Kait dijalankan sebelum kunci diambil, karena itulah posisi pemanggil
+      // yang sedang menunggu: permintaan penyela masih bisa masuk dan selesai.
+      if (opsi.sela !== undefined && !selaTerpakai) {
+        selaTerpakai = true;
+        opsi.sela();
+      }
+      if (bersama.dipegang !== null && bersama.dipegang !== lock) {
+        throw new Error(
+          `Tidak bisa mengambil kunci setelah ${String(batasMs)} ms: ` +
+            'eksekusi lain sedang memegang kunci skrip.',
+        );
+      }
+      bersama.dipegang = lock;
       lock.jumlahAmbil += 1;
+      if (opsi.jejak !== undefined) opsi.jejak.push('ambil');
     },
     releaseLock: () => {
+      if (bersama.dipegang === lock) bersama.dipegang = null;
       lock.jumlahLepas += 1;
+      if (opsi.jejak !== undefined) opsi.jejak.push('lepas');
     },
-    hasLock: () => lock.jumlahAmbil > lock.jumlahLepas,
+    hasLock: () => bersama.dipegang === lock,
   };
   return lock;
 }
@@ -271,6 +356,24 @@ export function buatLockPalsu(opsi: OpsiLock = {}): LockPalsu {
 export function buatLockServicePalsu(opsi: OpsiLock = {}): LockServicePalsu {
   const lock = buatLockPalsu(opsi);
   return { lock, getScriptLock: () => lock };
+}
+
+/**
+ * Menyuntikkan `{ getActive: () => ss }` apa adanya membuat `SpreadsheetApp.flush()`
+ * melempar TypeError yang tertangkap Kode.gs sebagai kegagalan menulis biasa,
+ * sehingga hilangnya flush terbaca sebagai bug lain. Jalur ini menyediakannya,
+ * dan `jejak` yang sama dengan jurnal kunci membuat urutannya bisa diperiksa.
+ */
+export function buatSpreadsheetAppPalsu(
+  ss: SpreadsheetPalsu,
+  jejak?: string[],
+): SpreadsheetAppPalsu {
+  return {
+    getActive: () => ss,
+    flush: () => {
+      if (jejak !== undefined) jejak.push('flush');
+    },
+  };
 }
 
 export function buatSessionPalsu(email: string): SessionPalsu {

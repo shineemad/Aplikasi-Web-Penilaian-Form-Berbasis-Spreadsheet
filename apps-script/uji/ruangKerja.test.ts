@@ -3,6 +3,7 @@ import {
   buatContentServicePalsu,
   buatLockServicePalsu,
   buatSessionPalsu,
+  buatSpreadsheetAppPalsu,
   buatSpreadsheetPalsu,
   sheetWajib,
   type KeluaranTeksPalsu,
@@ -93,7 +94,7 @@ function siapkan(opsi: OpsiSiapkan = {}): HasilSiapkan {
   const lockService = opsi.lockService === undefined ? buatLockServicePalsu() : opsi.lockService;
   const konteks = muatKode({
     Session: buatSessionPalsu(opsi.email === undefined ? PEMILIK : opsi.email),
-    SpreadsheetApp: { getActive: () => ss },
+    SpreadsheetApp: buatSpreadsheetAppPalsu(ss),
     LockService: lockService,
     ContentService: buatContentServicePalsu(),
   });
@@ -119,6 +120,19 @@ function namaSheet(ss: SpreadsheetPalsu): string[] {
 function kepalaSheet(ss: SpreadsheetPalsu, nama: string): unknown[] {
   const baris = sheetWajib(ss, nama).getDataRange().getValues()[0];
   return baris === undefined ? [] : baris;
+}
+
+/**
+ * Seluruh isi tiap sheet, untuk dibandingkan sebelum dan sesudah penyiapan.
+ *
+ * Menghitung jumlah barisnya saja meloloskan penimpaan: kepala kolom yang
+ * ditulis ulang menggeser posisi kolom `status`, sehingga kebijakan izin
+ * membaca kolom yang keliru — dan sheet-nya tetap berjumlah baris yang sama.
+ */
+function isiSeluruhSheet(ss: SpreadsheetPalsu): Record<string, unknown[][]> {
+  const hasil: Record<string, unknown[][]> = {};
+  for (const sheet of ss.getSheets()) hasil[sheet.getName()] = sheet.getDataRange().getValues();
+  return hasil;
 }
 
 /**
@@ -182,10 +196,47 @@ describe('penyiapan bersifat idempoten', () => {
       { pemilik: PEMILIK },
     );
     siapkan({ ss });
+    const sebelum = isiSeluruhSheet(ss).Penilaian;
     const { balasan } = siapkan({ ss });
-    expect(sheetWajib(ss, 'Penilaian').getDataRange().getValues()).toHaveLength(2);
+    expect(isiSeluruhSheet(ss).Penilaian).toEqual(sebelum);
     expect(balasan.dilewati).toContain('Penilaian');
     expect(balasan.dibuat).toEqual([]);
+  });
+
+  it('tidak mengubah satu sel pun pada ruang kerja yang kelima sheetnya sudah berisi', () => {
+    // Uji yang hanya menghitung baris meloloskan penimpaan kepala kolom.
+    // Bandingkan isinya: kepala `Sesi` yang ditulis ulang menggeser kolom
+    // status, dan seluruh kebijakan izin ikut salah baca tanpa satu pun
+    // uji izin menjadi merah.
+    const ss = buatSpreadsheetPalsu(
+      {
+        Proyek: [
+          KEPALA_MENURUT_SPEC.Proyek as unknown[],
+          ['P1', 'Kelas A', 1, '2026-01-01', '2026-02-01', '2026-01-01'],
+        ],
+        Sesi: KISI_SESI,
+        Responden: [
+          KEPALA_MENURUT_SPEC.Responden as unknown[],
+          ['S1', 'a1', 'ani@kampus.id', 'Ani', 'lengkap', '2026-01-01'],
+        ],
+        Skema: [
+          KEPALA_MENURUT_SPEC.Skema as unknown[],
+          ['SK1', 'q1', 'Butir 1', 'Dimensi A', 'likert', '', 4, 1],
+        ],
+        Penilaian: [
+          KEPALA_MENURUT_SPEC.Penilaian as unknown[],
+          [1, 'S1', 'a1', 'K1', 80, '', 'penilai@kampus.id', '2026-01-01T00:00:00.000Z'],
+        ],
+      },
+      { pemilik: PEMILIK },
+    );
+    const sebelum = isiSeluruhSheet(ss);
+    const { balasan } = siapkan({ ss });
+    expect(balasan.ok).toBe(true);
+    expect(isiSeluruhSheet(ss)).toEqual(sebelum);
+    expect(balasan.dibuat).toEqual([]);
+    expect(balasan.dilengkapi).toEqual([]);
+    expect((balasan.dilewati ?? []).slice().sort()).toEqual(LIMA_SHEET);
   });
 
   it('melengkapi kepala pada sheet yang sudah ada tetapi masih kosong', () => {
@@ -207,11 +258,14 @@ describe('penyiapan berisik saat ragu, bukan menebak', () => {
       { Sesi: [['sesi_id', 'status', 'penilai'], ['S1', 'berjalan', 'penilai@kampus.id']] },
       { pemilik: PEMILIK },
     );
+    const sebelum = isiSeluruhSheet(ss).Sesi;
     const { balasan } = siapkan({ ss });
     expect(balasan.ok).toBe(true);
     expect(balasan.kode).toBe('SIAP_DENGAN_PERINGATAN');
     expect((balasan.peringatan ?? []).join(' ')).toMatch(/admin/);
-    expect(sheetWajib(ss, 'Sesi').getDataRange().getValues()).toHaveLength(2);
+    // Sheet yang kurang kolom justru yang paling menggoda untuk "diperbaiki"
+    // dengan menulis ulang kepalanya; itu menggeser seluruh datanya.
+    expect(isiSeluruhSheet(ss).Sesi).toEqual(sebelum);
   });
 
   it('tidak memperingati apa pun bila kelima sheet lengkap', () => {

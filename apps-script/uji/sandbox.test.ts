@@ -3,11 +3,14 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   buatContentServicePalsu,
+  buatKeadaanKunci,
   buatLockPalsu,
   buatLockServicePalsu,
   buatSessionPalsu,
+  buatSpreadsheetAppPalsu,
   buatSpreadsheetPalsu,
   sheetWajib,
+  adalahRumus,
   type KeluaranTeksPalsu,
   type SheetPalsu,
   type SpreadsheetPalsu,
@@ -115,7 +118,7 @@ function muatDenganGooglePalsu(): Record<string, unknown> {
   const ss = buatSpreadsheetPalsu({ Sesi: SESI_BAWAAN, Penilaian: [KEPALA_PENILAIAN] });
   return muatKode({
     Session: buatSessionPalsu('admin@kampus.id'),
-    SpreadsheetApp: { getActive: () => ss },
+    SpreadsheetApp: buatSpreadsheetAppPalsu(ss),
     LockService: buatLockServicePalsu(),
     ContentService: buatContentServicePalsu(),
   });
@@ -258,6 +261,36 @@ describe('spreadsheet palsu mengikuti bentuk API Google', () => {
     ]);
   });
 
+  it('mengubah hash berangka menjadi angka, persis seperti Sheets', () => {
+    // Inilah sebabnya setiap sel teks harus ditulis berawalan apostrof:
+    // responden_id adalah hash heksadesimal 16 karakter, dan sebagian di
+    // antaranya memang berbentuk angka murni.
+    const sheet = buatSpreadsheetPalsu({}).insertSheet('Penilaian');
+    sheet.appendRow(['0012345678901234', '12e4567890123456', '1']);
+    expect(sheet.getDataRange().getValues()[0]).toEqual([12345678901234, Infinity, 1]);
+  });
+
+  it('menyimpan sel berawalan apostrof sebagai teks tanpa apostrofnya', () => {
+    const sheet = buatSpreadsheetPalsu({}).insertSheet('Penilaian');
+    sheet.appendRow(["'0012345678901234", "'80", "'", "'=Sesi!H2"]);
+    expect(sheet.getDataRange().getValues()[0]).toEqual([
+      '0012345678901234',
+      '80',
+      '',
+      '=Sesi!H2',
+    ]);
+  });
+
+  it('menandai sel berawalan sama dengan sebagai rumus, bukan sebagai teks', () => {
+    // Tanpa pemodelan ini, catatan '=Sesi!H2' yang bocor menjadi rumus tersimpan
+    // sebagai teks yang tampak persis sama dengan yang benar.
+    const sheet = buatSpreadsheetPalsu({}).insertSheet('Penilaian');
+    sheet.appendRow(['=Sesi!H2', 'biasa']);
+    const baris = sheet.getDataRange().getValues()[0] ?? [];
+    expect(adalahRumus(baris[0])).toBe(true);
+    expect(adalahRumus(baris[1])).toBe(false);
+  });
+
   it('tidak membagikan larik dengan pemanggilnya', () => {
     const isiAwal = [['penilaian_id']];
     const penilaian = sheetWajib(buatSpreadsheetPalsu({ Penilaian: isiAwal }), 'Penilaian');
@@ -295,6 +328,58 @@ describe('lock palsu mencatat pengambilan dan pelepasan', () => {
     const layanan = buatLockServicePalsu({ batasWaktuHabis: true });
     expect(() => layanan.getScriptLock().waitLock(10_000)).toThrow(/kunci/i);
     expect(layanan.lock.jumlahAmbil).toBe(0);
+  });
+
+  it('menolak eksekusi kedua selagi kunci dipegang eksekusi pertama', () => {
+    // Kunci skrip Apps Script berlaku untuk seluruh proyek, bukan per eksekusi.
+    // Palsu yang membiarkan keduanya mengambil kunci membuat §13 butir 4
+    // mustahil diuji: permintaan yang menyela akan selalu dijawab tersimpan.
+    const bersama = buatKeadaanKunci();
+    const satu = buatLockServicePalsu({ bersama });
+    const dua = buatLockServicePalsu({ bersama });
+    satu.getScriptLock().waitLock(10_000);
+    expect(() => dua.getScriptLock().waitLock(10_000)).toThrow(/eksekusi lain/i);
+    expect(dua.lock.jumlahAmbil).toBe(0);
+    satu.getScriptLock().releaseLock();
+    dua.getScriptLock().waitLock(10_000);
+    expect(dua.lock.hasLock()).toBe(true);
+  });
+
+  it('menjalankan kait sela sekali, di dalam waitLock dan sebelum kunci diambil', () => {
+    // Runtime ini satu utas, jadi balapan hanya bisa disimulasikan dengan
+    // menyisipkan permintaan lain persis di titik menunggu.
+    const jejak: string[] = [];
+    const layanan = buatLockServicePalsu({
+      sela: () => {
+        jejak.push(`sela:${String(layanan.lock.hasLock())}`);
+      },
+    });
+    layanan.getScriptLock().waitLock(10_000);
+    jejak.push(`sesudah:${String(layanan.lock.hasLock())}`);
+    layanan.getScriptLock().releaseLock();
+    layanan.getScriptLock().waitLock(10_000);
+    expect(jejak).toEqual(['sela:false', 'sesudah:true']);
+  });
+
+  it('mencatat pengambilan dan pelepasan pada jurnal bersama', () => {
+    const jejak: string[] = [];
+    const layanan = buatLockServicePalsu({ jejak });
+    layanan.getScriptLock().waitLock(10_000);
+    layanan.getScriptLock().releaseLock();
+    expect(jejak).toEqual(['ambil', 'lepas']);
+  });
+});
+
+describe('SpreadsheetApp palsu menyediakan flush', () => {
+  it('mencatat flush pada jurnal yang sama dengan kunci', () => {
+    // Tanpa flush pada palsu, hilangnya SpreadsheetApp.flush() di Kode.gs
+    // terbaca sebagai TypeError dan dijawab GAGAL_MENULIS — kegagalan yang
+    // tampak seperti bug lain sama sekali.
+    const jejak: string[] = [];
+    const app = buatSpreadsheetAppPalsu(buatSpreadsheetPalsu({ Sesi: SESI_BAWAAN }), jejak);
+    app.flush();
+    expect(jejak).toEqual(['flush']);
+    expect(app.getActive().getSheets().map((satu) => satu.getName())).toEqual(['Sesi']);
   });
 });
 

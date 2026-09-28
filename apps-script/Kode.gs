@@ -120,6 +120,23 @@ var STATUS_BOLEH_DITULIS = ['draft', 'berjalan'];
 var STATUS_FINAL = 'final';
 
 /**
+ * Batas panjang satu sel Sheets. Catatan yang melewatinya membuat `appendRow`
+ * melempar, yang terbaca sebagai `GAGAL_MENULIS` — kode yang menyuruh Store
+ * mencoba lagi, padahal percobaan keberapa pun akan gagal dengan cara yang
+ * sama. Karena itu panjangnya ditolak lebih dulu sebagai muatan tidak sah.
+ *
+ * Apostrof pemaksa teks ikut menempati satu karakter, jadi batas yang diterima
+ * di sini satu lebih pendek daripada batas Sheets.
+ */
+var BATAS_SEL_TEKS = 50000;
+
+/**
+ * Karakter kendali C0 selain tab dan baris baru. Keduanya memang diketik orang
+ * di kolom catatan; sisanya tidak, dan Sheets menolak sel yang memuatnya.
+ */
+var POLA_KENDALI = /[\u0000-\u0008\u000B-\u001F]/;
+
+/**
  * Dipakai dua jalur wewenang yang berbeda, jadi disatukan di sini: penyiapan
  * ruang kerja tidak melewati `putuskanIzin_`, dan salah setel deployment harus
  * terbaca sama di kedua jalur.
@@ -177,11 +194,14 @@ function doPost(e) {
   // mentah pemanggil, supaya aksi menulis ke sesi yang barusan diizinkan.
   // `oleh` dirapikan dengan cara yang sama dengan daftar peran pada sheet Sesi;
   // jejak audit yang menyimpan " PENILAI@Kampus.id " tidak akan pernah cocok
-  // dengan daftar itu saat direkap kembali.
+  // dengan daftar itu saat direkap kembali. `pemanggil` dibawa apa adanya
+  // supaya izinnya bisa diputuskan ULANG di dalam kunci, terhadap sheet Sesi
+  // yang keadaannya bisa saja sudah berubah selama permintaan ini menunggu.
   return balas_(
     jalankanAksi_({
       aksi: permintaan.aksi,
       sesiId: sesi.sesiId,
+      pemanggil: pemanggil,
       oleh: rapikanKecil_(pemanggil),
       muatan: permintaan.muatan,
     }),
@@ -262,8 +282,59 @@ function simpanPenilaian_(perintah) {
   }
 }
 
+/**
+ * Menjalankan ULANG seluruh kebijakan izin terhadap sheet `Sesi` yang dibaca
+ * pada detik ini. Dipanggil hanya dari dalam kunci.
+ *
+ * Keputusan izin di `doPost` diambil sebelum kunci dipegang, dan menunggu
+ * giliran bisa memakan sepuluh detik penuh. Dalam rentang itu admin dapat
+ * memfinalkan sesi atau mencabut nama penilai dari daftar. Tanpa pemeriksaan
+ * ulang di sini, barisnya tetap mendarat dan balasannya tetap mengaku
+ * tersimpan: penulisan ke sesi yang sudah ditutup, oleh orang yang sudah tidak
+ * berhak (spec §10). Memeriksa di luar kunci lalu menulis di dalamnya bukan
+ * penegakan peran, melainkan penegakan peran sebagaimana keadaannya tadi.
+ */
+function periksaUlangIzin_(perintah) {
+  var sesi = cariSesi_(perintah.sesiId);
+  var keputusan = putuskanIzin_(perintah.pemanggil, perintah.aksi, sesi);
+  if (keputusan.izin === true) return { lolos: true, sesi: sesi };
+  return {
+    lolos: false,
+    sesi: sesi,
+    tolakan: {
+      ok: false,
+      kode: keputusan.kode,
+      sesiId: perintah.sesiId,
+      pesan:
+        keputusan.pesan +
+        ' Keadaan ini diperiksa ulang tepat sebelum menulis, jadi sesi atau daftar perannya ' +
+        'berubah selagi permintaan ini menunggu giliran. Tidak ada yang tertulis.',
+    },
+  };
+}
+
+/**
+ * Sheets menafsirkan isi sel seperti saat manusia mengetiknya, sehingga teks
+ * yang ditulis apa adanya bisa berubah wujud tanpa ada yang tahu:
+ * "0012345678901234" menjadi 12345678901234, "12e4567890123456" menjadi
+ * Infinity, dan apa pun yang diawali tanda sama dengan menjadi rumus.
+ *
+ * `responden_id` adalah hash heksadesimal 16 karakter, jadi sebagian di
+ * antaranya memang berbentuk angka murni. Barisnya tetap ada di sheet, tetapi
+ * tidak akan pernah bisa dicocokkan kembali dengan respondennya saat direkap —
+ * nilainya hilang diam-diam, persis kelas kegagalan yang paling dijaga proyek
+ * ini. Apostrof di depan memaksa selnya disimpan sebagai teks; ia tidak ikut
+ * tersimpan, jadi `getValues()` mengembalikan teks aslinya.
+ */
+function selTeks_(nilai) {
+  return "'" + String(nilai);
+}
+
 /** Dipanggil hanya dari dalam kunci; memanggilnya dari tempat lain memutus C2. */
 function tulisPenilaian_(perintah, isi) {
+  var ulang = periksaUlangIzin_(perintah);
+  if (ulang.lolos !== true) return ulang.tolakan;
+
   var berkas = SpreadsheetApp.getActive();
   var sheet =
     berkas === null || berkas === undefined ? null : berkas.getSheetByName(NAMA_SHEET_PENILAIAN);
@@ -307,14 +378,20 @@ function tulisPenilaian_(perintah, isi) {
   var baris = [];
   for (var i = 0; i < kepala.length; i += 1) baris.push('');
   baris[posisi['penilaian_id']] = nomor;
-  baris[posisi['sesi_id']] = perintah.sesiId;
-  baris[posisi['responden_id']] = isi.respondenId;
-  baris[posisi['kriteria']] = isi.kriteria;
+  baris[posisi['sesi_id']] = selTeks_(perintah.sesiId);
+  baris[posisi['responden_id']] = selTeks_(isi.respondenId);
+  baris[posisi['kriteria']] = selTeks_(isi.kriteria);
   baris[posisi['nilai']] = isi.nilai;
-  baris[posisi['catatan']] = isi.catatan;
-  baris[posisi['oleh']] = perintah.oleh;
-  baris[posisi['pada']] = pada;
+  baris[posisi['catatan']] = selTeks_(isi.catatan);
+  baris[posisi['oleh']] = selTeks_(perintah.oleh);
+  baris[posisi['pada']] = selTeks_(pada);
   sheet.appendRow(baris);
+
+  // Apps Script menunda penulisan sampai eksekusi selesai. Tanpa flush, baris
+  // ini bisa belum terlihat saat kunci dilepas, sehingga eksekusi berikutnya
+  // membaca kisi tanpa baris tadi dan memberi penilaian_id yang kembar —
+  // tepat kegagalan yang kuncinya ada untuk mencegah.
+  SpreadsheetApp.flush();
 
   return {
     ok: true,
@@ -410,6 +487,28 @@ function bacaMuatanPenilaian_(muatan) {
     // Hanya spasi tepi yang dibuang; catatan adalah teks bebas, jadi spasi dan
     // baris baru di dalamnya memang ditulis penilai dengan sengaja.
     catatan = muatan.catatan.trim();
+
+    if (catatan.length >= BATAS_SEL_TEKS) {
+      return {
+        sah: false,
+        pesan:
+          'Medan "catatan" sepanjang ' +
+          catatan.length +
+          ' karakter, melewati batas satu sel Sheets. Menulisnya akan ditolak Google, dan ' +
+          'penolakan itu terbaca sebagai kegagalan sementara sehingga permintaan ini akan ' +
+          'dicoba ulang selamanya tanpa pernah berhasil. Persingkat catatannya lebih dulu.',
+      };
+    }
+
+    if (POLA_KENDALI.test(catatan)) {
+      return {
+        sah: false,
+        pesan:
+          'Medan "catatan" memuat karakter kendali yang tidak bisa disimpan Sheets; hanya baris ' +
+          'baru dan tab yang diizinkan. Ini biasanya berasal dari salinan berkas biner atau ' +
+          'PDF. Ketik ulang catatannya sebagai teks biasa.',
+      };
+    }
   }
 
   if (nilai === '' && catatan === '') {
@@ -478,65 +577,26 @@ function finalkanSesi_(perintah) {
 /**
  * Dipanggil hanya dari dalam kunci.
  *
- * Sesi dibaca ULANG di sini alih-alih memakai hasil pemeriksaan izin: di antara
- * keputusan izin dan penulisan ini, permintaan lain bisa saja sudah memfinalkan
- * sesi yang sama, dan yang kedua akan menimpanya tanpa ada yang tahu.
+ * Izinnya diputuskan ULANG di sini, bukan dipakai kembali dari pemeriksaan di
+ * `doPost`: di antara keputusan itu dan penulisan ini, permintaan lain bisa
+ * saja sudah memfinalkan sesi yang sama, atau admin yang sedang menunggu bisa
+ * saja sudah dicabut dari daftar. Memeriksa statusnya saja tidak cukup —
+ * wewenangnya ikut kedaluwarsa, bukan hanya keadaan sesinya.
  */
 function tulisStatusFinal_(perintah) {
-  var sesi = cariSesi_(perintah.sesiId);
-  if (sesi.cacat !== '') {
-    return {
-      ok: false,
-      kode: 'SESI_CACAT',
-      sesiId: perintah.sesiId,
-      pesan:
-        'Sheet Sesi tidak bisa dipercaya: ' +
-        sesi.cacat +
-        '. Tidak ada baris yang difinalkan. Perbaiki sheet Sesi lebih dulu.',
-    };
-  }
-
-  if (sesi.ada !== true) {
-    return {
-      ok: false,
-      kode: 'SESI_TIDAK_ADA',
-      sesiId: perintah.sesiId,
-      pesan: 'Sesi "' + perintah.sesiId + '" sudah tidak ada saat gilirannya tiba, jadi tidak ada yang difinalkan.',
-    };
-  }
-
-  if (sesi.status === STATUS_FINAL) {
-    return {
-      ok: false,
-      kode: 'SESI_FINAL',
-      sesiId: sesi.sesiId,
-      pesan:
-        'Sesi "' +
-        sesi.sesiId +
-        '" sudah final, jadi tidak ada yang diubah. Kembalikan statusnya ke "berjalan" lewat ' +
-        'sheet Sesi bila memang masih perlu dinilai.',
-    };
-  }
-
-  if (!adaDalam_(STATUS_BOLEH_DITULIS, sesi.status)) {
-    return {
-      ok: false,
-      kode: 'SESI_CACAT',
-      sesiId: sesi.sesiId,
-      pesan:
-        'Sesi "' +
-        sesi.sesiId +
-        '" berstatus ' +
-        (sesi.status === '' ? 'kosong' : '"' + sesi.status + '"') +
-        ', bukan draft maupun berjalan. Karena tidak ada cara tahu apa yang sedang ditimpa, ' +
-        'statusnya dibiarkan apa adanya. Perbaiki kolom status pada sheet Sesi.',
-    };
-  }
+  var ulang = periksaUlangIzin_(perintah);
+  if (ulang.lolos !== true) return ulang.tolakan;
+  var sesi = ulang.sesi;
 
   SpreadsheetApp.getActive()
     .getSheetByName(NAMA_SHEET_SESI)
     .getRange(sesi.baris, sesi.kolomStatus)
     .setValue(STATUS_FINAL);
+
+  // Penulisan yang masih tertunda saat kunci dilepas membuat permintaan
+  // berikutnya membaca status lama dan menulis penilaian ke sesi yang sudah
+  // ditutup.
+  SpreadsheetApp.flush();
 
   return {
     ok: true,

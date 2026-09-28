@@ -1,12 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import {
   buatContentServicePalsu,
+  buatKeadaanKunci,
   buatLockServicePalsu,
   buatSessionPalsu,
+  buatSpreadsheetAppPalsu,
   buatSpreadsheetPalsu,
   sheetWajib,
   type KeluaranTeksPalsu,
   type LockServicePalsu,
+  type RangePalsu,
+  type SheetPalsu,
   type SpreadsheetPalsu,
 } from './googlePalsu';
 import { muatKode } from './sandbox';
@@ -113,6 +117,8 @@ function kirim(opsi: {
   /** Ruang kerja yang sama dipakai ulang untuk membuktikan urutan beberapa permintaan. */
   ss?: SpreadsheetPalsu;
   lockService?: LockServicePalsu;
+  /** Jurnal bersama kunci dan flush, untuk memeriksa urutan keduanya. */
+  jejak?: string[];
 }): {
   balasan: Balasan;
   ss: SpreadsheetPalsu;
@@ -125,7 +131,7 @@ function kirim(opsi: {
   const lockService = opsi.lockService === undefined ? buatLockServicePalsu() : opsi.lockService;
   const konteks = muatKode({
     Session: buatSessionPalsu(opsi.email),
-    SpreadsheetApp: { getActive: () => ss },
+    SpreadsheetApp: buatSpreadsheetAppPalsu(ss, opsi.jejak),
     LockService: lockService,
     ContentService: buatContentServicePalsu(),
   });
@@ -148,6 +154,7 @@ interface OpsiPanggil {
   kisiSesi?: unknown[][];
   ss?: SpreadsheetPalsu;
   lockService?: LockServicePalsu;
+  jejak?: string[];
 }
 
 function panggil(opsi: OpsiPanggil): {
@@ -166,6 +173,7 @@ function panggil(opsi: OpsiPanggil): {
     },
     ss: opsi.ss,
     lockService: opsi.lockService,
+    jejak: opsi.jejak,
   });
 }
 
@@ -179,6 +187,54 @@ function statusSesi(ss: SpreadsheetPalsu, sesiId: string): unknown {
   const baris = kisi.slice(1).find((satu) => satu[kolomSesi] === sesiId);
   if (baris === undefined) throw new Error(`Sesi ${sesiId} tidak ada pada sheet Sesi.`);
   return baris[kolomStatus];
+}
+
+/** Ruang kerja utuh yang bisa dipakai ulang beberapa permintaan berturut-turut. */
+function buatRuangKerjaSesi(): SpreadsheetPalsu {
+  return buatSpreadsheetPalsu({
+    Sesi: kisiDari([SESI_BAWAAN]),
+    Penilaian: [KEPALA_PENILAIAN],
+  });
+}
+
+/** Menulis langsung ke sel sheet Sesi, meniru admin yang menyunting lewat Google Sheets. */
+function setelSelSesi(ss: SpreadsheetPalsu, kolom: string, nilai: unknown): void {
+  const sheet = sheetWajib(ss, 'Sesi');
+  const kepala = sheet.getDataRange().getValues()[0];
+  if (kepala === undefined) throw new Error('Sheet Sesi tidak punya kepala kolom.');
+  const indeks = kepala.indexOf(kolom);
+  if (indeks < 0) throw new Error(`Kolom ${kolom} tidak ada pada sheet Sesi.`);
+  sheet.getRange(2, indeks + 1).setValue(nilai);
+}
+
+/**
+ * Membungkus sheet Sesi supaya uji bisa mengamati — atau menggagalkan —
+ * penulisan status tepat saat terjadi. Menghitung ambil dan lepas saja tidak
+ * cukup: menulis setelah releaseLock menghasilkan hitungan yang sama persis.
+ */
+function awasiStatus(ss: SpreadsheetPalsu, pengawas: (nilai: unknown) => void): SpreadsheetPalsu {
+  return {
+    ...ss,
+    getSheetByName: (nama) => {
+      const sheet = ss.getSheetByName(nama);
+      if (sheet === null || nama !== 'Sesi') return sheet;
+      const dibungkus: SheetPalsu = {
+        ...sheet,
+        getRange: (baris, kolom, jumlahBaris, jumlahKolom) => {
+          const asli = sheet.getRange(baris, kolom, jumlahBaris, jumlahKolom);
+          const range: RangePalsu = {
+            ...asli,
+            setValue: (nilai) => {
+              pengawas(nilai);
+              asli.setValue(nilai);
+            },
+          };
+          return range;
+        },
+      };
+      return dibungkus;
+    },
+  };
 }
 
 /**
@@ -631,7 +687,7 @@ describe('sheet Sesi yang cacat gagal menutup, bukan membuka', () => {
     const ss = buatSpreadsheetPalsu({ Penilaian: [KEPALA_PENILAIAN] });
     const konteks = muatKode({
       Session: buatSessionPalsu('admin@kampus.id'),
-      SpreadsheetApp: { getActive: () => ss },
+      SpreadsheetApp: buatSpreadsheetAppPalsu(ss),
       LockService: buatLockServicePalsu(),
       ContentService: buatContentServicePalsu(),
     });
@@ -871,5 +927,189 @@ describe('finalisasi menulis di dalam kunci', () => {
     expect(balasan.kode).toBe('SEDANG_SIBUK');
     expect(statusSesi(ss, 'S1')).toBe('berjalan');
     expect(lockService.lock.jumlahAmbil).toBe(0);
+  });
+
+  it('menulis status justru saat kunci sedang dipegang, bukan sesudahnya', () => {
+    // Menghitung ambil dan lepas tidak membuktikan urutannya: penulisan yang
+    // dipindah ke setelah releaseLock menghasilkan hitungan 1 dan 1 yang sama.
+    const lockService = buatLockServicePalsu();
+    const jejak: boolean[] = [];
+    const asli = buatRuangKerjaSesi();
+    const ss = awasiStatus(asli, () => {
+      jejak.push(lockService.lock.hasLock());
+    });
+    panggil({ email: 'admin@kampus.id', aksi: 'finalkanSesi', ss, lockService });
+    expect(jejak).toEqual([true]);
+    expect(statusSesi(asli, 'S1')).toBe('final');
+  });
+
+  it('memanggil flush setelah menulis status dan sebelum melepas kunci', () => {
+    // Penulisan yang masih tertunda saat kunci dilepas membuat permintaan
+    // berikutnya membaca status lama dan menulis ke sesi yang sudah ditutup.
+    // Yang dibuktikan di sini hanya URUTAN pemanggilannya; bahwa Google
+    // benar-benar menundanya harus dibuktikan pada deployment sungguhan
+    // di Tugas 7.
+    const jejak: string[] = [];
+    const lockService = buatLockServicePalsu({ jejak });
+    const { balasan } = panggil({
+      email: 'admin@kampus.id',
+      aksi: 'finalkanSesi',
+      lockService,
+      jejak,
+    });
+    expect(balasan.kode).toBe('DIFINALKAN');
+    expect(jejak).toEqual(['ambil', 'flush', 'lepas']);
+  });
+
+  it('melepas kunci dan menjawab JSON walau penulisan status melempar', () => {
+    // Jalur gagal justru yang paling sering melupakan releaseLock, dan kunci
+    // yang tergantung membekukan seluruh sistem sampai batas waktunya habis.
+    const lockService = buatLockServicePalsu();
+    const asli = buatRuangKerjaSesi();
+    const ss = awasiStatus(asli, () => {
+      throw new Error('Kuota Sheets habis.');
+    });
+    const { balasan } = panggil({
+      email: 'admin@kampus.id',
+      aksi: 'finalkanSesi',
+      ss,
+      lockService,
+    });
+    expect(balasan.kode).toBe('GAGAL_MENULIS');
+    expect(lockService.lock.jumlahLepas).toBe(1);
+    expect(statusSesi(asli, 'S1')).toBe('berjalan');
+  });
+});
+
+describe('finalisasi memutuskan ulang izin di dalam kunci', () => {
+  /**
+   * Lapisan ini berlapis dengan pemeriksaan di `doPost`, dan itu disengaja:
+   * yang di luar kunci menolak lebih awal, yang di dalam kunci menolak apa
+   * yang berubah selagi permintaan ini menunggu giliran. Memeriksa statusnya
+   * saja tidak cukup — wewenang pemanggil ikut kedaluwarsa.
+   */
+  it('menolak finalisasi yang tiba setelah admin lain menutup sesi yang sama', () => {
+    const ss = buatRuangKerjaSesi();
+    const bersama = buatKeadaanKunci();
+    const kunciDua = buatLockServicePalsu({ bersama });
+    const kunciSatu = buatLockServicePalsu({
+      bersama,
+      sela: () => {
+        panggil({ email: 'admin@kampus.id', aksi: 'finalkanSesi', ss, lockService: kunciDua });
+      },
+    });
+    const { balasan } = panggil({
+      email: 'admin@kampus.id',
+      aksi: 'finalkanSesi',
+      ss,
+      lockService: kunciSatu,
+    });
+    expect(balasan.ok).toBe(false);
+    expect(balasan.kode).toBe('SESI_FINAL');
+    expect(statusSesi(ss, 'S1')).toBe('final');
+    expect(kunciSatu.lock.jumlahLepas).toBe(1);
+  });
+
+  it('menolak admin yang dicabut dari daftar selagi menunggu kunci', () => {
+    const ss = buatRuangKerjaSesi();
+    const lockService = buatLockServicePalsu({
+      bersama: buatKeadaanKunci(),
+      sela: () => {
+        setelSelSesi(ss, 'admin', 'admin2@kampus.id');
+      },
+    });
+    const { balasan } = panggil({
+      email: 'admin@kampus.id',
+      aksi: 'finalkanSesi',
+      ss,
+      lockService,
+    });
+    expect(balasan.ok).toBe(false);
+    expect(balasan.kode).toBe('ORANG_TIDAK_DIKENAL');
+    expect(statusSesi(ss, 'S1')).toBe('berjalan');
+  });
+
+  it('menolak bila baris sesinya hilang selagi menunggu kunci', () => {
+    const ss = buatRuangKerjaSesi();
+    const lockService = buatLockServicePalsu({
+      bersama: buatKeadaanKunci(),
+      sela: () => {
+        setelSelSesi(ss, 'sesi_id', 'S9');
+      },
+    });
+    const { balasan } = panggil({
+      email: 'admin@kampus.id',
+      aksi: 'finalkanSesi',
+      ss,
+      lockService,
+    });
+    expect(balasan.ok).toBe(false);
+    expect(balasan.kode).toBe('SESI_TIDAK_ADA');
+    expect(statusSesi(ss, 'S9')).toBe('berjalan');
+  });
+
+  it('tetap memfinalkan bila tidak ada yang berubah selagi menunggu', () => {
+    // Penjaga arah sebaliknya: pemeriksaan ulang yang terlalu ketat menolak
+    // finalisasi yang sah, dan kegagalannya sama merugikannya.
+    const lockService = buatLockServicePalsu({ bersama: buatKeadaanKunci(), sela: () => {} });
+    const { balasan, ss } = panggil({
+      email: 'admin@kampus.id',
+      aksi: 'finalkanSesi',
+      lockService,
+    });
+    expect(balasan.kode).toBe('DIFINALKAN');
+    expect(statusSesi(ss, 'S1')).toBe('final');
+  });
+});
+
+describe('kepala kolom sheet Sesi dicocokkan setelah dinormalisasi (aturan 4 repo)', () => {
+  /**
+   * `semuaKolom_` adalah satu-satunya jalan menemukan kolom peran DAN kolom
+   * status, jadi celah pada normalisasinya langsung menjadi celah pada
+   * kebijakan izin: sheet yang kepalanya berhuruf besar akan tampak seperti
+   * sheet yang kehilangan kolom wajib, dan seluruh sesinya ditolak.
+   */
+  const KEPALA_JANGGAL: unknown[] = [
+    ' SESI_ID ',
+    'proyek_id',
+    'nama',
+    'skema_id',
+    'mode',
+    'Status',
+    ' PENILAI',
+    'Admin ',
+  ];
+
+  const kisiJanggal = (): unknown[][] => [KEPALA_JANGGAL, barisSesi(SESI_BAWAAN)];
+
+  it('memfinalkan sesi walau kepala kolomnya berspasi tepi dan berhuruf besar', () => {
+    const { balasan, ss } = panggil({
+      email: 'admin@kampus.id',
+      aksi: 'finalkanSesi',
+      kisiSesi: kisiJanggal(),
+    });
+    expect(balasan.kode).toBe('DIFINALKAN');
+    // Dibaca lewat posisi kolomnya langsung: indexOf('status') tidak akan
+    // menemukan kepala 'Status', dan uji yang gagal membacanya akan tampak
+    // seperti kegagalan penulisan.
+    expect(sheetWajib(ss, 'Sesi').getDataRange().getValues()[1]?.[5]).toBe('final');
+  });
+
+  it('tetap menolak orang luar pada sheet yang kepala kolomnya janggal', () => {
+    const { balasan } = panggil({
+      email: 'orangluar@gmail.com',
+      aksi: 'finalkanSesi',
+      kisiSesi: kisiJanggal(),
+    });
+    expect(balasan.kode).toBe('ORANG_TIDAK_DIKENAL');
+  });
+
+  it('tetap menolak penilai pada sheet yang kepala kolomnya janggal', () => {
+    const { balasan } = panggil({
+      email: 'penilai@kampus.id',
+      aksi: 'finalkanSesi',
+      kisiSesi: kisiJanggal(),
+    });
+    expect(balasan.kode).toBe('BUKAN_ADMIN');
   });
 });

@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
+  adalahRumus,
   buatContentServicePalsu,
+  buatKeadaanKunci,
   buatLockServicePalsu,
   buatSessionPalsu,
+  buatSpreadsheetAppPalsu,
   buatSpreadsheetPalsu,
   sheetWajib,
   type KeluaranTeksPalsu,
@@ -110,6 +113,13 @@ interface OpsiSimpan {
   /** Ruang kerja yang sama dipakai ulang untuk membuktikan penambahan baris. */
   ss?: SpreadsheetPalsu;
   lockService?: LockServicePalsu;
+  /** Jurnal bersama kunci dan flush, untuk memeriksa urutan keduanya. */
+  jejak?: string[];
+  /**
+   * Badan permintaan apa adanya. Satu-satunya cara menguji muatan yang tidak
+   * bisa dihasilkan JSON.stringify — Infinity, misalnya, keluar sebagai null.
+   */
+  badanMentah?: string;
 }
 
 interface HasilSimpan {
@@ -123,22 +133,50 @@ function simpan(opsi: OpsiSimpan = {}): HasilSimpan {
   const lockService = opsi.lockService === undefined ? buatLockServicePalsu() : opsi.lockService;
   const konteks = muatKode({
     Session: buatSessionPalsu(opsi.email === undefined ? 'penilai1@kampus.id' : opsi.email),
-    SpreadsheetApp: { getActive: () => ss },
+    SpreadsheetApp: buatSpreadsheetAppPalsu(ss, opsi.jejak),
+    LockService: lockService,
+    ContentService: buatContentServicePalsu(),
+  });
+  const doPost = konteks.doPost;
+  if (typeof doPost !== 'function') throw new Error('Kode.gs tidak mengekspos doPost.');
+  const badan =
+    opsi.badanMentah === undefined
+      ? JSON.stringify({
+          aksi: 'simpanPenilaian',
+          sesiId: opsi.sesiIdDikirim === undefined ? 'S1' : opsi.sesiIdDikirim,
+          muatan: opsi.muatan === undefined ? MUATAN_BAWAAN : opsi.muatan,
+        })
+      : opsi.badanMentah;
+  const keluaran = (doPost as (e: unknown) => KeluaranTeksPalsu)({
+    postData: { contents: badan },
+  });
+  return { balasan: JSON.parse(keluaran.getContent()) as Balasan, ss, lockService };
+}
+
+/** Finalisasi dipakai untuk menutup sesi di tengah permintaan lain yang menunggu kunci. */
+function finalkan(ss: SpreadsheetPalsu, lockService: LockServicePalsu): Balasan {
+  const konteks = muatKode({
+    Session: buatSessionPalsu('admin@kampus.id'),
+    SpreadsheetApp: buatSpreadsheetAppPalsu(ss),
     LockService: lockService,
     ContentService: buatContentServicePalsu(),
   });
   const doPost = konteks.doPost;
   if (typeof doPost !== 'function') throw new Error('Kode.gs tidak mengekspos doPost.');
   const keluaran = (doPost as (e: unknown) => KeluaranTeksPalsu)({
-    postData: {
-      contents: JSON.stringify({
-        aksi: 'simpanPenilaian',
-        sesiId: opsi.sesiIdDikirim === undefined ? 'S1' : opsi.sesiIdDikirim,
-        muatan: opsi.muatan === undefined ? MUATAN_BAWAAN : opsi.muatan,
-      }),
-    },
+    postData: { contents: JSON.stringify({ aksi: 'finalkanSesi', sesiId: 'S1' }) },
   });
-  return { balasan: JSON.parse(keluaran.getContent()) as Balasan, ss, lockService };
+  return JSON.parse(keluaran.getContent()) as Balasan;
+}
+
+/** Menulis langsung ke sel sheet Sesi, meniru admin yang menyunting lewat Google Sheets. */
+function setelSelSesi(ss: SpreadsheetPalsu, kolom: string, nilai: unknown): void {
+  const sheet = sheetWajib(ss, 'Sesi');
+  const kepala = sheet.getDataRange().getValues()[0];
+  if (kepala === undefined) throw new Error('Sheet Sesi tidak punya kepala kolom.');
+  const indeks = kepala.indexOf(kolom);
+  if (indeks < 0) throw new Error(`Kolom ${kolom} tidak ada pada sheet Sesi.`);
+  sheet.getRange(2, indeks + 1).setValue(nilai);
 }
 
 /** Dibaca lewat kepala kolom, bukan lewat indeks tetap, supaya uji kolom yang ditukar tetap sahih. */
@@ -549,4 +587,318 @@ describe('izin yang ditolak tidak menyisakan baris', () => {
       expect(lockService.lock.jumlahAmbil).toBe(0);
     });
   }
+});
+
+describe('izin diputuskan ulang di dalam kunci, bukan dipakai kembali', () => {
+  /**
+   * Menunggu kunci bisa memakan sepuluh detik penuh, dan dalam rentang itu
+   * sheet Sesi bisa berubah. Memeriksa izin di luar kunci lalu menulis di
+   * dalamnya berarti menegakkan peran sebagaimana keadaannya tadi, bukan
+   * sebagaimana keadaannya saat baris benar-benar mendarat (spec §10).
+   */
+  it('menolak penilaian yang tiba setelah sesi difinalkan selagi menunggu kunci', () => {
+    const ss = buatRuangKerja();
+    const bersama = buatKeadaanKunci();
+    const kunciAdmin = buatLockServicePalsu({ bersama });
+    const kunciPenilai = buatLockServicePalsu({
+      bersama,
+      sela: () => {
+        finalkan(ss, kunciAdmin);
+      },
+    });
+    const { balasan } = simpan({ ss, lockService: kunciPenilai });
+    expect(balasan.ok).toBe(false);
+    expect(balasan.kode).toBe('SESI_FINAL');
+    expect(barisPenilaian(ss)).toHaveLength(0);
+    // Penolakan yang terjadi di dalam kunci tetap wajib melepasnya.
+    expect(kunciPenilai.lock.jumlahLepas).toBe(1);
+  });
+
+  it('menolak penilai yang dicabut dari daftar selagi menunggu kunci', () => {
+    const ss = buatRuangKerja();
+    const kunci = buatLockServicePalsu({
+      bersama: buatKeadaanKunci(),
+      sela: () => {
+        setelSelSesi(ss, 'penilai', 'penilai2@kampus.id');
+      },
+    });
+    const { balasan } = simpan({ ss, email: 'penilai1@kampus.id', lockService: kunci });
+    expect(balasan.ok).toBe(false);
+    expect(balasan.kode).toBe('ORANG_TIDAK_DIKENAL');
+    expect(barisPenilaian(ss)).toHaveLength(0);
+  });
+
+  it('menolak bila sheet Sesi menjadi cacat selagi menunggu kunci', () => {
+    const ss = buatRuangKerja();
+    const kunci = buatLockServicePalsu({
+      bersama: buatKeadaanKunci(),
+      sela: () => {
+        setelSelSesi(ss, 'status', 'Selesai');
+      },
+    });
+    const { balasan } = simpan({ ss, lockService: kunci });
+    expect(balasan.kode).toBe('SESI_CACAT');
+    expect(barisPenilaian(ss)).toHaveLength(0);
+  });
+
+  it('tetap menyimpan bila tidak ada yang berubah selagi menunggu', () => {
+    // Penjaga arah sebaliknya: pemeriksaan ulang yang terlalu ketat akan
+    // menolak penilaian yang sah, dan kegagalannya sama merugikannya.
+    const kunci = buatLockServicePalsu({ bersama: buatKeadaanKunci(), sela: () => {} });
+    const { balasan, ss } = simpan({ lockService: kunci });
+    expect(balasan.kode).toBe('TERSIMPAN');
+    expect(barisPenilaian(ss)).toHaveLength(1);
+  });
+});
+
+describe('spec §13 butir 4 — dua permintaan yang benar-benar bersamaan', () => {
+  it('menolak permintaan kedua yang menyela saat kunci masih dipegang', () => {
+    // Kunci skrip Apps Script berlaku untuk seluruh proyek. Palsu yang
+    // membiarkan permintaan kedua ikut mengambil kunci membuat seluruh uji
+    // "bersamaan" hanya menjadi dua pemanggilan berurutan.
+    const ss = buatRuangKerja();
+    const bersama = buatKeadaanKunci();
+    const kunciSatu = buatLockServicePalsu({ bersama });
+    const kunciDua = buatLockServicePalsu({ bersama });
+    let kedua: Balasan | undefined;
+    const diawasi = awasiPenulisan(ss, () => {
+      if (kedua !== undefined) return;
+      kedua = simpan({ ss, lockService: kunciDua, email: 'penilai2@kampus.id' }).balasan;
+    });
+    const { balasan } = simpan({ ss: diawasi, lockService: kunciSatu });
+    expect(balasan.kode).toBe('TERSIMPAN');
+    expect(kedua?.kode).toBe('SEDANG_SIBUK');
+    expect(barisPenilaian(ss)).toHaveLength(1);
+  });
+
+  it('membaca nomor terbesar di dalam kunci, bukan sebelum menunggu giliran', () => {
+    // Permintaan penyela selesai sepenuhnya selagi permintaan ini menunggu.
+    // Nomor yang dibaca sebelum menunggu sudah basi begitu giliran tiba, dan
+    // dua baris akan memakai penilaian_id yang sama — C2 runtuh tanpa satu pun
+    // uji berurutan menjadi merah.
+    const ss = buatRuangKerja();
+    const bersama = buatKeadaanKunci();
+    const kunciDua = buatLockServicePalsu({ bersama });
+    const kunciSatu = buatLockServicePalsu({
+      bersama,
+      sela: () => {
+        simpan({ ss, lockService: kunciDua, email: 'penilai2@kampus.id' });
+      },
+    });
+    simpan({ ss, lockService: kunciSatu });
+    const nomor = barisPenilaian(ss).map((baris) => baris.penilaianId);
+    expect(nomor).toEqual([1, 2]);
+    expect(new Set(nomor).size).toBe(nomor.length);
+  });
+});
+
+describe('penulisan dikosongkan sebelum kunci dilepas', () => {
+  it('memanggil flush setelah menambah baris dan sebelum melepas kunci', () => {
+    // Apps Script menunda penulisan sampai eksekusi selesai. Kunci yang dilepas
+    // lebih dulu membuat eksekusi berikutnya membaca kisi tanpa baris ini dan
+    // memberi penilaian_id yang kembar.
+    //
+    // Yang dibuktikan di sini hanyalah URUTAN pemanggilannya; bahwa Google
+    // benar-benar menunda penulisan tanpa flush harus dibuktikan pada
+    // deployment sungguhan di Tugas 7.
+    const jejak: string[] = [];
+    const lockService = buatLockServicePalsu({ jejak });
+    const { balasan } = simpan({ lockService, jejak });
+    expect(balasan.kode).toBe('TERSIMPAN');
+    expect(jejak).toEqual(['ambil', 'flush', 'lepas']);
+  });
+});
+
+describe('Sheets memaksa tipe sel, jadi sel teks ditulis sebagai teks', () => {
+  /**
+   * `responden_id` adalah hash heksadesimal 16 karakter. Sebagian di antaranya
+   * berbentuk angka murni atau notasi eksponen, dan Sheets mengubahnya menjadi
+   * angka saat ditulis apa adanya. Barisnya tetap ada di sheet, tetapi tidak
+   * akan pernah bisa dicocokkan kembali dengan respondennya saat direkap.
+   */
+  for (const kasus of [
+    { nama: 'berangka nol di depan', id: '0012345678901234' },
+    { nama: 'bernotasi eksponen', id: '12e4567890123456' },
+    { nama: 'seluruhnya angka', id: '1234567890123456' },
+  ]) {
+    it(`menyimpan responden_id ${kasus.nama} apa adanya`, () => {
+      const { ss } = simpan({
+        muatan: { respondenId: kasus.id, kriteria: 'K1', nilai: 80 },
+      });
+      const tersimpan = barisPenilaian(ss)[0]?.respondenId;
+      expect(tersimpan).toBe(kasus.id);
+      expect(typeof tersimpan).toBe('string');
+    });
+  }
+
+  it('menyimpan kriteria "1" sebagai teks, bukan sebagai angka', () => {
+    // Kriteria manual boleh dinamai apa saja, termasuk nomor butir.
+    const { ss } = simpan({ muatan: { respondenId: 'a1', kriteria: '1', nilai: 80 } });
+    expect(barisPenilaian(ss)[0]?.kriteria).toBe('1');
+  });
+
+  it('menyimpan catatan "80" sebagai teks, bukan sebagai angka', () => {
+    const { ss } = simpan({
+      muatan: { respondenId: 'a1', kriteria: 'K1', catatan: '80' },
+    });
+    expect(barisPenilaian(ss)[0]?.catatan).toBe('80');
+  });
+
+  it('menyimpan sesi_id berangka apa adanya', () => {
+    const ss = buatSpreadsheetPalsu({
+      Sesi: [
+        KEPALA_SESI,
+        ['007', 'P1', 'Post-Test', 'SK1', 'indeks', 'berjalan', PENILAI_BAWAAN, 'admin@kampus.id'],
+      ],
+      Penilaian: [KEPALA_PENILAIAN],
+    });
+    simpan({ ss, sesiIdDikirim: '007' });
+    expect(barisPenilaian(ss)[0]?.sesiId).toBe('007');
+  });
+
+  it('menyimpan catatan berawalan sama dengan sebagai teks, bukan sebagai rumus', () => {
+    // Catatan adalah teks bebas dari penilai. Yang mendarat sebagai rumus akan
+    // membaca sel lain ruang kerja dan menampilkan hasilnya seolah-olah itu
+    // yang diketik penilai.
+    const { ss } = simpan({
+      muatan: { respondenId: 'a1', kriteria: 'K1', catatan: '=Sesi!H2' },
+    });
+    const catatan = barisPenilaian(ss)[0]?.catatan;
+    expect(adalahRumus(catatan)).toBe(false);
+    expect(catatan).toBe('=Sesi!H2');
+  });
+
+  it('menyimpan catatan berawalan tanda minus apa adanya', () => {
+    // Awalan +, -, dan @ BELUM terbukti dievaluasi Sheets, jadi uji ini tidak
+    // mengklaim apa pun tentangnya — ia hanya mengunci bentuk yang tersimpan.
+    // Perilaku Sheets sungguhnya harus diperiksa di Tugas 7.
+    const { ss } = simpan({
+      muatan: { respondenId: 'a1', kriteria: 'K1', catatan: '- kurang lengkap' },
+    });
+    expect(barisPenilaian(ss)[0]?.catatan).toBe('- kurang lengkap');
+  });
+});
+
+describe('kepala kolom dicocokkan setelah dinormalisasi (aturan 4 repo)', () => {
+  it('menulis ke kolom yang kepalanya berspasi tepi dan berhuruf besar', () => {
+    // `semuaKolom_` dipakai bersama oleh sheet Penilaian DAN pencarian sesi,
+    // jadi celah di sini ikut mengenai kebijakan izin.
+    const ss = buatRuangKerja({
+      penilaian: [
+        [
+          ' PENILAIAN_ID ',
+          'Sesi_Id',
+          ' responden_id',
+          'KRITERIA',
+          ' NILAI ',
+          'Catatan',
+          'OLEH ',
+          ' Pada ',
+        ],
+      ],
+    });
+    const { balasan } = simpan({ ss });
+    expect(balasan.kode).toBe('TERSIMPAN');
+    const baris = sheetWajib(ss, NAMA_PENILAIAN).getDataRange().getValues()[1];
+    expect(baris?.slice(0, 7)).toEqual([1, 'S1', 'a1', 'K1', 80, '', 'penilai1@kampus.id']);
+  });
+
+  it('menulis ke kolom yang kepalanya memuat spasi ganda di dalamnya', () => {
+    const ss = buatRuangKerja({
+      penilaian: [
+        ['penilaian_id', 'sesi_id', 'responden  id', 'kriteria', 'nilai', 'catatan', 'oleh', 'pada'],
+      ],
+    });
+    // "responden  id" bukan "responden_id"; merapatkan spasi tidak boleh
+    // berubah menjadi menyamakan nama kolom yang memang berbeda.
+    const { balasan } = simpan({ ss });
+    expect(balasan.kode).toBe('PENILAIAN_CACAT');
+  });
+});
+
+describe('nomor terbesar dibaca dari sel yang tipenya bermacam-macam', () => {
+  const barisLama = (id: unknown): unknown[] => [
+    id,
+    'S1',
+    'a9',
+    'K9',
+    50,
+    '',
+    'penilai1@kampus.id',
+    '2026-01-01T00:00:00.000Z',
+  ];
+
+  it('membaca penilaian_id yang tersimpan sebagai teks', () => {
+    // Sheet yang pernah diimpor dari CSV menyimpan kolom itu sebagai teks.
+    const ss = buatRuangKerja({
+      penilaian: [KEPALA_PENILAIAN, barisLama('5'), barisLama('2')],
+    });
+    expect(simpan({ ss }).balasan.penilaianId).toBe(6);
+  });
+
+  it('mengabaikan sel penilaian_id bernilai Infinity', () => {
+    // Satu sel rusak tidak boleh membuat seluruh penomoran berikutnya mustahil.
+    const ss = buatRuangKerja({
+      penilaian: [KEPALA_PENILAIAN, barisLama('Infinity'), barisLama(3)],
+    });
+    expect(simpan({ ss }).balasan.penilaianId).toBe(4);
+  });
+});
+
+describe('catatan yang tidak muat di satu sel ditolak, bukan dicoba lalu gagal', () => {
+  const dasar = { respondenId: 'a1', kriteria: 'K1', nilai: 80 };
+
+  it('menolak catatan yang melewati batas satu sel Sheets', () => {
+    // appendRow yang melempar dijawab GAGAL_MENULIS — kode yang menyuruh Store
+    // mencoba lagi, padahal percobaan keberapa pun akan gagal dengan cara yang
+    // sama. Antreannya tidak akan pernah kosong.
+    const { balasan, ss } = simpan({ muatan: { ...dasar, catatan: 'x'.repeat(50_000) } });
+    expect(balasan.ok).toBe(false);
+    expect(balasan.kode).toBe('MUATAN_TIDAK_SAH');
+    expect(balasan.pesan).toMatch(/catatan/i);
+    expect(barisPenilaian(ss)).toHaveLength(0);
+  });
+
+  it('menerima catatan yang masih muat beserta apostrof pemaksa teksnya', () => {
+    const { balasan } = simpan({ muatan: { ...dasar, catatan: 'x'.repeat(49_999) } });
+    expect(balasan.ok).toBe(true);
+  });
+
+  it('menolak catatan yang memuat karakter kendali C0', () => {
+    const { balasan, ss } = simpan({ muatan: { ...dasar, catatan: 'baik\u0000buruk' } });
+    expect(balasan.kode).toBe('MUATAN_TIDAK_SAH');
+    expect(barisPenilaian(ss)).toHaveLength(0);
+  });
+
+  it('tetap menerima baris baru dan tab di dalam catatan', () => {
+    // Keduanya memang diketik orang di kolom catatan; menolaknya berarti
+    // menolak catatan yang sah.
+    const { balasan, ss } = simpan({ muatan: { ...dasar, catatan: 'baris satu\nbaris\tdua' } });
+    expect(balasan.ok).toBe(true);
+    expect(barisPenilaian(ss)[0]?.catatan).toBe('baris satu\nbaris\tdua');
+  });
+
+  it('menolak catatan yang hanya berisi spasi bila tidak ada nilai', () => {
+    const { balasan, ss } = simpan({
+      muatan: { respondenId: 'a1', kriteria: 'K1', catatan: '   ' },
+    });
+    expect(balasan.kode).toBe('MUATAN_TIDAK_SAH');
+    expect(barisPenilaian(ss)).toHaveLength(0);
+  });
+});
+
+describe('muatan yang tidak bisa dihasilkan JSON.stringify', () => {
+  it('menolak nilai 1e999 yang terurai menjadi Infinity', () => {
+    // JSON.stringify mengubah Infinity menjadi null, jadi muatan ini hanya bisa
+    // tiba lewat badan mentah — dan badan mentah justru yang dikirim penyerang.
+    const { balasan, ss } = simpan({
+      badanMentah:
+        '{"aksi":"simpanPenilaian","sesiId":"S1","muatan":' +
+        '{"respondenId":"a1","kriteria":"K1","nilai":1e999}}',
+    });
+    expect(balasan.ok).toBe(false);
+    expect(balasan.kode).toBe('MUATAN_TIDAK_SAH');
+    expect(balasan.pesan).toMatch(/nilai/i);
+    expect(barisPenilaian(ss)).toHaveLength(0);
+  });
 });
