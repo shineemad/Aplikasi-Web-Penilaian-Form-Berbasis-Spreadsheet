@@ -2,9 +2,18 @@
 
 > **Untuk pekerja agentik:** SUB-SKILL WAJIB: pakai `subagent-driven-development` (disarankan) atau `executing-plans` untuk mengerjakan rencana ini tugas demi tugas. Langkah memakai sintaks checkbox (`- [ ]`) untuk penanda kemajuan.
 
-**Tujuan:** Membangun modul **Store** dan backend **Apps Script** yang spec §5.2 syaratkan, beserta penegakan peran di sisi server (§9.2) dan finalisasi sesi. Setelah rencana ini, kriteria penerimaan §13 butir 4 (dua penilai dari perangkat berbeda tanpa data hilang) terpenuhi, dan butir 3 (uji keamanan §11.3) terbukti untuk seluruh kebijakannya — tetapi **belum** untuk deployment Google yang sesungguhnya. Batas itu dijelaskan di bawah dan tidak boleh dikaburkan.
+**Tujuan:** Membangun modul **Store** dan backend **Apps Script** yang spec §5.2 syaratkan, beserta penegakan peran di sisi server (§9.2) dan finalisasi sesi.
 
-**Arsitektur:** Kebijakan izin hidup di **satu tempat saja**, yaitu berkas `apps-script/Kode.gs` yang benar-benar di-deploy. Berkas itu diuji **di dalam proses** dengan `node:vm` dan global Google palsu, sehingga uji keamanan memanggil `doPost` secara langsung — bukan memeriksa tombol. Tidak ada bundler, tidak ada salinan, sehingga tidak ada celah bagi kebijakan yang diuji untuk melenceng dari kebijakan yang berjalan. Di sisi klien, `src/io/store.ts` memakai transport yang **disuntikkan**, sehingga rencana ini netral terhadap pilihan hosting.
+**Apa yang benar-benar terbukti setelah rencana ini** — ditulis sempit dengan sengaja:
+
+| Kriteria | Keadaan |
+| --- | --- |
+| §13 butir 3 (uji keamanan §11.3) | Terbukti untuk **kebijakannya**, dengan memanggil `doPost` secara langsung. **Belum** terbukti untuk sistem terpasangnya — menunggu protokol dijalankan dengan akun Google kedua. Lihat K6. |
+| §13 butir 4 (dua penilai tanpa data hilang) | Terbukti untuk **sisi server**: kunci eksklusif, izin diperiksa ulang di dalam kunci, nomor dibaca di dalam kunci, `flush` sebelum kunci dilepas. **Belum** terbukti untuk rantai Store → server → baca, untuk dua tab peramban, maupun untuk "perangkat berbeda" yang menuntut transport (C3). |
+
+Batas-batas itu tidak boleh dikaburkan.
+
+**Arsitektur:** Kebijakan izin hidup di **satu tempat saja**, yaitu berkas `apps-script/Kode.gs` yang akan di-deploy apa adanya. Berkas itu diuji **di dalam proses** dengan `node:vm` dan global Google palsu, sehingga uji keamanan memanggil `doPost` secara langsung — bukan memeriksa tombol. Tidak ada bundler, tidak ada salinan, sehingga tidak ada celah bagi kebijakan yang diuji untuk melenceng dari kebijakan yang berjalan. Di sisi klien, `src/io/store.ts` memakai transport yang **disuntikkan**, sehingga rencana ini netral terhadap pilihan hosting.
 
 **Tech Stack:** TypeScript (`strict` + `noUncheckedIndexedAccess`), Vitest, `node:vm` (bawaan Node), Google Apps Script (V8), Google Sheets.
 
@@ -84,7 +93,7 @@ Enam berikut lahir dari rencana ini.
 
 ## Koreksi terhadap spec
 
-Lima hal dicatat di sini. Dua yang pertama menuntut suntingan spec; tiga sisanya menuntut keputusan pengguna — C3 sebelum Rencana UI dimulai, C4 dan C5 sebelum Tugas 7 dapat dinyatakan lulus.
+Tujuh hal dicatat di sini. Empat menuntut suntingan spec (C1, C2, C5, C7); tiga menuntut keputusan pengguna — **C3** sebelum Rencana UI dimulai, dan **C4** beserta **C6** yang bergantung padanya sebelum protokol keamanan dapat dinyatakan lulus.
 
 ### C1 — "Baris terakhir yang berlaku" tidak bisa dibaca harfiah
 
@@ -149,22 +158,15 @@ Perhatikan ini **tidak** selesai dengan memilih jalan A pada C3. Menyajikan UI d
 
 **Tidak terbuktikan di sandbox.** `node:vm` tidak tahu apa yang Google kembalikan pada tiap mode. Ini harus dibuktikan pada deployment sungguhan dari akun kedua (Tugas 7), dan sampai itu terjadi §13 butir 3 tetap dicatat belum terbukti (K6).
 
-### C5 — peran `pengamat` tidak punya tempat penyimpanan (butuh keputusan pengguna)
+### C5 — peran `pengamat` di luar V1 (diputuskan)
 
-§9.1 menyebut tiga peran: Admin, Penilai, dan **Pengamat** yang boleh membaca rekap dan tidak boleh menulis apa pun. §9.3 memperkuatnya dengan menuntut rekap untuk pengamat memakai `id`, bukan email.
+§9.1 menyebut tiga peran: Admin, Penilai, dan **Pengamat** yang boleh membaca rekap dan tidak boleh menulis apa pun. §9.3 memperkuatnya dengan menuntut rekap untuk pengamat memakai `id`, bukan email. Tetapi §6.4 hanya memberi sheet `Sesi` dua kolom peran: `penilai` dan `admin`. Tidak ada tempat menuliskan siapa pengamatnya.
 
-Tetapi §6.4 hanya memberi sheet `Sesi` dua kolom peran: `penilai` dan `admin`. Tidak ada tempat menuliskan siapa pengamatnya.
+**Keputusan:** pengamat **di luar V1**. Ini bukan pilihan bebas — spec sudah menjawabnya sendiri: §12.1 "Dibangun sekarang" hanya menyebut "Peran admin dan penilai". Mencatatnya sebagai pertanyaan terbuka adalah kekeliruan pembacaan, bukan kehati-hatian.
 
-Akibatnya bukan sekadar fitur yang hilang, melainkan tekanan ke arah yang salah: pengamat selalu ditolak sebagai `ORANG_TIDAK_DIKENAL`, dan admin yang ingin memberi akses baca hanya punya satu jalan yang tersedia — menambahkan orang itu ke kolom `penilai`. Itu sama dengan memberinya hak **tulis** ke `Penilaian`. Peran yang tidak punya tempat penyimpanan tidak menjadi tidak ada; ia menjadi peran yang lebih tinggi.
+Akibatnya harus ditanggung dengan mata terbuka: permintaan "boleh lihat rekapnya saja" belum punya jawaban selain menambahkan orang itu ke kolom `penilai`, yang sama dengan memberi hak **tulis** ke `Penilaian`. Peran yang tidak punya tempat penyimpanan tidak menjadi tidak ada; ia menjadi peran yang lebih tinggi. Itu masuk daftar yang ditunda, dan **§9.1 serta §9.3 perlu disunting** agar tidak menjanjikan peran yang tidak dibangun.
 
-Dua jalan keluar, keduanya menyunting spec:
-
-| Jalan | Akibat |
-| --- | --- |
-| **A. Tambah kolom `pengamat` pada §6.4** | §9.1 dan §9.3 berlaku apa adanya. `KOLOM_SESI_WAJIB` bertambah satu, dan seluruh sheet `Sesi` yang sudah ada harus ditambahi kolom itu — tanpa itu, kebijakan menolak seluruh sesi lama sebagai `SESI_CACAT`. |
-| **B. Buang `pengamat` dari V1** | §9.1 dan §9.3 ditulis ulang. Jujur terhadap yang benar-benar dibangun, tetapi permintaan "boleh lihat rekapnya saja" tidak punya jawaban selain memberi hak tulis. |
-
-**Rencana ini tidak memilih.** Sampai diputuskan, `SYARAT_AKSI` di `Kode.gs` sengaja tidak menyebut `pengamat` sama sekali, dan alasannya ditulis di berkas itu supaya tidak terbaca sebagai kelalaian.
+`SYARAT_AKSI` di `Kode.gs` sengaja tidak menyebut `pengamat` sama sekali, dan alasannya ditulis di berkas itu supaya tidak terbaca sebagai kelalaian.
 
 ### C6 — siapa yang boleh menyiapkan ruang kerja (diputuskan, dengan syarat)
 
@@ -607,7 +609,7 @@ Tugas ini tidak menambah kode. Ia mencegah klaim yang lebih besar daripada bukti
 
 Protokol memuat, dalam urutan yang dapat diikuti tanpa menebak:
 
-1. **Setelan deployment yang benar** — "Jalankan sebagai: Pengguna yang mengakses", "Siapa yang punya akses: siapa saja dengan Akun Google" (atau dibatasi domain). Sertakan peringatan bahwa memilih anonim membuat `getActiveUser()` kosong dan seluruh penegakan peran runtuh.
+1. **Kedua mode deployment, tanpa meresepkan salah satunya.** Lihat C4: rencana ini sengaja tidak memilih, dan protokol justru bertugas **membuktikan** mana yang berlaku. Tuliskan apa yang masing-masing mode kembalikan dari `Session.getActiveUser().getEmail()` dan mengapa keduanya bertabrakan dengan §9.2. Sertakan peringatan bahwa memilih akses anonim membuat `getActiveUser()` kosong dan seluruh penegakan peran runtuh — backend menolaknya dengan `TANPA_IDENTITAS`, dan protokol harus memeriksa bahwa kode itulah yang muncul.
 2. **Pemeriksaan §9.2 yang tidak bisa diotomatiskan:** Spreadsheet Ruang Kerja **tidak** dibagikan kepada penilai maupun pengamat. Langkahnya: buka menu Bagikan, pastikan hanya admin yang terdaftar. Bila Spreadsheet dibagikan, seluruh pengaturan peran menjadi hiasan.
 3. **Empat uji §11.3 terhadap deployment sungguhan,** masing-masing dengan akun yang menjalankan, langkah persis, dan balasan yang diharapkan — termasuk kode kesalahannya.
 4. **Tempat mencatat bukti** — tanggal, akun, dan balasan apa adanya.

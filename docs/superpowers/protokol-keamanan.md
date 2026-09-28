@@ -85,7 +85,7 @@ Cara membaca hasilnya:
 
 - **A1 menjawab `ORANG_TIDAK_DIKENAL`** → Google **mengirimkan** identitas akun kedua. Pesan penolakannya berbunyi `Email <x> tidak terdaftar sebagai admin maupun penilai pada sesi "UJI-LUAR"`. **Salin `<x>` apa adanya ke tabel bukti** — itulah jawaban empiris atas pertanyaan "siapa yang sebenarnya dikembalikan `getActiveUser()`", dan itu yang dilaporkan ke pengguna untuk memutuskan C4.
 - **A1 menjawab `TANPA_IDENTITAS`** → Google **tidak** mengirimkan identitas pada setelan ini. Mode "Jalankan sebagai: Saya" dengan akun di luar domain adalah penyebab yang paling mungkin, tetapi **jangan mencatatnya sebagai sebab tanpa menguji setelan yang lain**. Ulangi A1 pada setelan alternatif dan catat kedua hasilnya.
-- **A2 wajib menjawab `TANPA_IDENTITAS`.** Kode lain apa pun di sini adalah temuan serius dan harus dilaporkan sebelum protokol dilanjutkan.
+- **A2 lulus dengan salah satu dari dua hasil.** Pertama, permintaan **tidak sampai ke `doPost`** sama sekali — Google membalas halaman login HTML atau `401`/`403`. Itu justru tanda deployment non-anonim yang benar: penjagaannya berlapis di depan skrip. Kedua, balasannya `TANPA_IDENTITAS` dari backend. Yang menjadi **temuan serius** hanyalah bila permintaan tanpa identitas menembus sampai ke sebuah aksi dan dijawab sukses, atau dijawab dengan kode penolakan peran biasa seperti `ORANG_TIDAK_DIKENAL` — yang terakhir berarti salah setel deployment akan tersamar sebagai penolakan yang wajar dan tidak pernah tertangkap.
 - **A3 diharapkan menjawab `AKSI_BELUM_DIBANGUN`** — lihat §5; itu berarti izin **lolos**.
 
 > **C4 tidak diputuskan di sini.** Protokol ini hanya menghasilkan angka dan kode yang dilaporkan ke pengguna. Pertanyaan yang harus dijawab pengguna setelah tabel bukti terisi: apakah institusi punya Google Workspace, dan apakah **seluruh** penilai serta pengamat punya akun di domain itu? Bila tidak — klausul §9.2 yang mana yang ditulis ulang, sumber identitasnya atau larangan berbagi Spreadsheet?
@@ -238,7 +238,7 @@ Alasan pemasangannya: Apps Script menunda penulisan sampai eksekusi selesai, seh
 - tidak ada satu pun nomor yang muncul dua kali;
 - tidak ada nomor yang terlewat.
 
-Ini sekaligus bukti lapangan untuk **§13 butir 4** (dua penilai dari perangkat berbeda tanpa data hilang).
+Ini bukti lapangan untuk **sisi server** §13 butir 4 saja — bahwa dua penulisan yang berebut tidak saling menghilangkan di dalam Apps Script. Ia **tidak** menguji Store, tidak menguji dua tab peramban, dan tidak menguji transport. Rantai Store → server → baca belum terbukti di mana pun, dan "perangkat berbeda" menuntut keputusan C3 lebih dulu.
 
 Yang **tidak** dibuktikan langkah ini: bahwa `flush()` yang membuatnya berhasil. Untuk itu `flush()` harus dicabut dan percobaan diulang — sekali lagi, hanya pada **salinan**. Bila percobaan salinan tidak dijalankan, catat E2 sebagai **"perilaku dengan `flush` terbukti baik; keperluan `flush` belum diuji"**, bukan sebagai lulus penuh.
 
