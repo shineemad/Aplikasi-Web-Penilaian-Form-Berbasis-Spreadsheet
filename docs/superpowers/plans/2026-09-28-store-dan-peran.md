@@ -170,7 +170,7 @@ Jalankan `npm test` dan `npm run typecheck`; keduanya harus tetap hijau (391 uji
 `apps-script/uji/googlePalsu.ts` menyediakan:
 
 - `buatSpreadsheetPalsu(isiAwal: Record<string, unknown[][]>)` → objek dengan `getSheetByName`, `insertSheet`, `getSheets`. Tiap sheet punya `getDataRange().getValues()`, `getRange(baris, kolom)`, `appendRow`, `getLastRow`, `getName`.
-- `buatLockPalsu()` → mencatat berapa kali `waitLock` dan `releaseLock` dipanggil, sehingga uji dapat membuktikan kunci selalu dilepas.
+- `buatLockPalsu()` → mencatat berapa kali `waitLock` dan `releaseLock` dipanggil, sehingga uji dapat membuktikan kunci selalu dilepas. `buatLockServicePalsu()` membungkus **satu** lock dan mengembalikannya pada setiap `getScriptLock`, supaya uji memegang lock yang benar-benar dipakai `Kode.gs`; menyuntikkan `getScriptLock: buatLockPalsu` memberi objek baru tiap pemanggilan dan membuat Batasan Global 19 mustahil dibuktikan.
 - `buatSessionPalsu(email: string)`.
 - `ContentService` palsu yang menyimpan teks dan MIME agar uji dapat membaca balasan.
 
@@ -232,7 +232,9 @@ Hanya `doPost` yang mengembalikan penolakan untuk aksi tak dikenal. Belum ada ke
 
 Ini inti rencana. Seluruh §11.3 dibuktikan di sini dengan memanggil `doPost` langsung.
 
-Tabel peran §9.1 diterjemahkan menjadi satu fungsi `putuskanIzin_(emailSesi, aksi, sesi)` yang mengembalikan `{izin:true}` atau `{izin:false, kode, pesan}`. Kode kesalahan yang dipakai: `TANPA_IDENTITAS`, `TIDAK_DIKENAL`, `BUKAN_ADMIN`, `SESI_FINAL`, `SESI_TIDAK_ADA`, `MUATAN_TIDAK_SAH`.
+Tabel peran §9.1 diterjemahkan menjadi satu fungsi `putuskanIzin_(emailSesi, aksi, sesi)` yang mengembalikan `{izin:true}` atau `{izin:false, kode, pesan}`. Kode kesalahan yang dipakai: `TANPA_IDENTITAS`, `ORANG_TIDAK_DIKENAL`, `BUKAN_ADMIN`, `SESI_FINAL`, `SESI_TIDAK_ADA`, `MUATAN_TIDAK_SAH`.
+
+Namanya `ORANG_TIDAK_DIKENAL`, bukan `TIDAK_DIKENAL`, karena `TIDAK_DIKENAL` adalah substring dari `AKSI_TIDAK_DIKENAL`: satu `kode.includes('TIDAK_DIKENAL')` di frontend akan menyamakan "Anda bukan siapa-siapa di sesi ini" dengan "aksi ini tidak ada".
 
 **Helper `panggil` yang dipakai seluruh uji di bawah** dibuat lebih dulu di berkas uji ini. Ia merakit sandbox, menyiapkan sheet `Sesi` berisi satu sesi bawaan, lalu memanggil `doPost` sungguhan:
 
@@ -249,8 +251,8 @@ function panggil(opsi: {
   const konteks = muatKode({
     Session: buatSessionPalsu(opsi.email),
     SpreadsheetApp: { getActive: () => ss },
-    LockService: { getScriptLock: buatLockPalsu },
-    ContentService: contentServicePalsu(),
+    LockService: buatLockServicePalsu(),
+    ContentService: buatContentServicePalsu(),
   });
   const keluaran = (konteks.doPost as Function)({
     postData: { contents: JSON.stringify({ aksi: opsi.aksi, sesiId: sesi.sesiId, muatan: opsi.muatan ?? {} }) },
@@ -283,7 +285,7 @@ it('menolak penulisan ke sesi berstatus final', () => {
 
 it('menolak email di luar daftar', () => {
   const { balasan } = panggil({ email: 'orangluar@gmail.com', aksi: 'bacaRekap' });
-  expect(balasan.kode).toBe('TIDAK_DIKENAL');
+  expect(balasan.kode).toBe('ORANG_TIDAK_DIKENAL');
 });
 ```
 
@@ -294,7 +296,7 @@ Ketiganya adalah cara sistem ini bisa tampak aman padahal tidak:
 ```ts
 it('menolak identitas kosong dengan kode tersendiri', () => {
   // Deployment "siapa saja, bahkan anonim" membuat getActiveUser() kosong.
-  // Bila ini jatuh ke TIDAK_DIKENAL, salah setel deployment akan tersamar
+  // Bila ini jatuh ke ORANG_TIDAK_DIKENAL, salah setel deployment akan tersamar
   // sebagai penolakan peran biasa dan tidak pernah tertangkap.
   const { balasan } = panggil({ email: '', aksi: 'bacaRekap' });
   expect(balasan.kode).toBe('TANPA_IDENTITAS');
