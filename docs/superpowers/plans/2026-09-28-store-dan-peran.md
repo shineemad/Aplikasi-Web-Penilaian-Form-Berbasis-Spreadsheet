@@ -352,12 +352,26 @@ it('mengambil kolom oleh dari sesi Google, bukan dari muatan', () => {
   expect(barisPenilaian()[0].oleh).toBe('penilai@kampus.id');
 });
 
-it('melepas kunci walau penulisan gagal', () => {
+it('melepas kunci walau penulisan gagal setelah kunci terambil', () => {
   // LockService yang tidak dilepas akan membekukan seluruh sistem sampai
   // batas waktunya habis. Jalur gagal justru yang paling sering lupa.
-  const lock = buatLockPalsu();
-  simpanYangGagal(lock);
-  expect(lock.jumlahLepas).toBe(lock.jumlahAmbil);
+  const lockService = buatLockServicePalsu();
+  simpanYangGagal(lockService);
+  expect(lockService.lock.jumlahAmbil).toBe(1);
+  expect(lockService.lock.jumlahLepas).toBe(1);
+});
+
+it('menolak dengan pesan yang mengajari bila kunci tidak bisa diambil', () => {
+  // JANGAN menulis `jumlahLepas === jumlahAmbil` di sini. `waitLock` yang
+  // melempar tidak pernah menambah `jumlahAmbil`, sehingga implementasi yang
+  // BENAR (melepas di `finally`) menghasilkan 1 lepas atas 0 ambil dan uji
+  // seperti itu justru merah. Yang diperiksa: permintaan ditolak, bukan
+  // dianggap tersimpan.
+  const lockService = buatLockServicePalsu({ gagalkanWaitLock: true });
+  const { balasan } = simpan({ lockService });
+  expect(balasan.ok).toBe(false);
+  expect(lockService.lock.jumlahAmbil).toBe(0);
+  expect(barisPenilaian()).toHaveLength(0);
 });
 
 it('dua penulis bersamaan sama-sama tersimpan', () => {
