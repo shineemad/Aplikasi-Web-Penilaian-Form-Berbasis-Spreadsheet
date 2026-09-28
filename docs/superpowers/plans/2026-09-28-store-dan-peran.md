@@ -166,6 +166,32 @@ Dua jalan keluar, keduanya menyunting spec:
 
 **Rencana ini tidak memilih.** Sampai diputuskan, `SYARAT_AKSI` di `Kode.gs` sengaja tidak menyebut `pengamat` sama sekali, dan alasannya ditulis di berkas itu supaya tidak terbaca sebagai kelalaian.
 
+### C6 — siapa yang boleh menyiapkan ruang kerja (diputuskan, dengan syarat)
+
+Spec tidak menjawabnya. §9.1 tidak menyebut penyiapan sebagai aksi, dan §6.4 hanya menyimpan admin **per sesi** — bukan admin ruang kerja. Lingkarannya nyata: penyiapan membuat sheet `Sesi`, sedangkan daftar admin dibaca **dari** sheet itu. Aturan yang hanya bertanya "apakah dia admin?" membuat penyiapan pertama mustahil; aturan yang menyerah membuat siapa pun bisa menyiapkan ruang kerja orang lain.
+
+**Keputusan:** boleh menyiapkan = **pemilik Spreadsheet** (`getOwner()`) **∪** setiap email pada kolom `admin` sheet `Sesi`. Pemilik dipakai karena ia satu-satunya identitas yang sudah ada sebelum data apa pun ada. Bila pemilik tidak terbaca **dan** belum ada admin, permintaan ditolak dengan `PEMILIK_TIDAK_DIKETAHUI` — gagal menutup, bukan membuka.
+
+**Syarat yang membuat keputusan ini sah:** perluasan ke "admin sesi mana pun" hanya benar selama **penyiapan bersifat aditif** — ia boleh membuat sheet yang belum ada dan menambah kepala kolom yang hilang, tetapi tidak boleh menimpa isi yang sudah ada. Begitu penyiapan bisa menimpa, admin sesi mana pun dapat merusak sesi milik orang lain. Syarat ini ditegakkan uji yang membandingkan **isi** sheet sebelum dan sesudah, bukan sekadar jumlah barisnya.
+
+**C6 bergantung pada C4.** Pada mode "Jalankan sebagai: Pengguna yang mengakses", `getOwner()` menuntut pemanggil punya akses ke Spreadsheet — persis yang §9.2 larang. Aturan ini hanya utuh pada mode "Jalankan sebagai: Saya". Jadi C6 ikut menunggu jawaban atas C4.
+
+### C7 — server tidak memeriksa isi penilaian terhadap data lain (butuh keputusan pengguna)
+
+Backend menerima `simpanPenilaian` tanpa memeriksa tiga hal:
+
+- `nilai` tidak diuji terhadap rentang pada `Skema` (`skor_maks`, atau rentang manual di `parameter`)
+- `respondenId` tidak diperiksa keberadaannya di sheet `Responden`
+- `kriteria` tidak diperiksa keberadaannya di sheet `Skema`
+
+Akibatnya satu salah ketik menghasilkan **baris yatim** yang tetap dijawab tersimpan. Aturan 3 repo menuntut berisik saat ragu, dan ini diam.
+
+Yang menahan keputusan ini bukan kesulitan teknis melainkan biayanya: memeriksa ketiganya berarti membaca dua sheet tambahan **di dalam kunci** pada setiap penulisan, sehingga penulisan menjadi lebih lambat justru pada operasi yang paling sering dilakukan penilai. Ada pula pertanyaan urutan: penilaian manual kadang ditulis untuk kriteria yang memang belum ada di `Skema` (§7.1 aturan `manual`).
+
+**Rencana ini tidak memilih.** Tetapi **Tugas 5 harus tahu cara memperlakukan baris yatim**, karena `nilaiBerlaku` akan menemuinya: baris dengan `respondenId` yang tidak ada di daftar responden mana pun. Menjatuhkannya diam-diam melanggar instruksi repo ("spec menuntut baris ditandai, bukan dihilangkan").
+
+**Catatan kunci untuk Tugas 5.** §6.3 menyebut nilai yang berlaku ditentukan pasangan (`responden_id`, `kriteria`), sedangkan `.github/copilot-instructions.md` menyebut (`sesi_id`, `responden_id`, `kriteria`). Yang benar adalah yang memuat `sesi_id`: tanpa itu, nilai seorang responden pada Pre-Test akan ditimpa nilainya pada Post-Test, dan seluruh kolom `selisih` menjadi kosong tanpa ada yang menyadarinya. Spec §6.3 disunting di Tugas 7.
+
 ---
 
 ## Struktur Berkas
