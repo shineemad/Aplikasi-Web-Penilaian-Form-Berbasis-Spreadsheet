@@ -6,6 +6,7 @@ import {
   buatSpreadsheetPalsu,
   sheetWajib,
   type KeluaranTeksPalsu,
+  type LockServicePalsu,
   type SpreadsheetPalsu,
 } from './googlePalsu';
 import { muatKode } from './sandbox';
@@ -26,6 +27,8 @@ interface Balasan {
   pesan: string;
   /** Hanya ada pada balasan yang sudah melewati kebijakan izin. */
   sesiId?: string;
+  /** Hanya ada pada balasan finalisasi yang berhasil. */
+  status?: string;
 }
 
 interface BarisSesi {
@@ -103,15 +106,27 @@ function kisiDari(daftar: BarisSesi[]): unknown[][] {
   return hasil;
 }
 
-function kirim(opsi: { email: string; kisiSesi: unknown[][]; badan: unknown }): {
+function kirim(opsi: {
+  email: string;
+  kisiSesi: unknown[][];
+  badan: unknown;
+  /** Ruang kerja yang sama dipakai ulang untuk membuktikan urutan beberapa permintaan. */
+  ss?: SpreadsheetPalsu;
+  lockService?: LockServicePalsu;
+}): {
   balasan: Balasan;
   ss: SpreadsheetPalsu;
+  lockService: LockServicePalsu;
 } {
-  const ss = buatSpreadsheetPalsu({ Sesi: opsi.kisiSesi, Penilaian: [KEPALA_PENILAIAN] });
+  const ss =
+    opsi.ss === undefined
+      ? buatSpreadsheetPalsu({ Sesi: opsi.kisiSesi, Penilaian: [KEPALA_PENILAIAN] })
+      : opsi.ss;
+  const lockService = opsi.lockService === undefined ? buatLockServicePalsu() : opsi.lockService;
   const konteks = muatKode({
     Session: buatSessionPalsu(opsi.email),
     SpreadsheetApp: { getActive: () => ss },
-    LockService: buatLockServicePalsu(),
+    LockService: lockService,
     ContentService: buatContentServicePalsu(),
   });
   const doPost = konteks.doPost;
@@ -119,7 +134,7 @@ function kirim(opsi: { email: string; kisiSesi: unknown[][]; badan: unknown }): 
   const keluaran = (doPost as (e: unknown) => KeluaranTeksPalsu)({
     postData: { contents: JSON.stringify(opsi.badan) },
   });
-  return { balasan: JSON.parse(keluaran.getContent()) as Balasan, ss };
+  return { balasan: JSON.parse(keluaran.getContent()) as Balasan, ss, lockService };
 }
 
 interface OpsiPanggil {
@@ -131,9 +146,15 @@ interface OpsiPanggil {
   sesiIdDikirim?: unknown;
   /** Kisi sheet Sesi apa adanya; menggantikan `sesi` bila diisi. */
   kisiSesi?: unknown[][];
+  ss?: SpreadsheetPalsu;
+  lockService?: LockServicePalsu;
 }
 
-function panggil(opsi: OpsiPanggil): { balasan: Balasan; ss: SpreadsheetPalsu } {
+function panggil(opsi: OpsiPanggil): {
+  balasan: Balasan;
+  ss: SpreadsheetPalsu;
+  lockService: LockServicePalsu;
+} {
   const sesi: BarisSesi = { ...SESI_BAWAAN, ...opsi.sesi };
   return kirim({
     email: opsi.email,
@@ -143,7 +164,21 @@ function panggil(opsi: OpsiPanggil): { balasan: Balasan; ss: SpreadsheetPalsu } 
       sesiId: opsi.sesiIdDikirim === undefined ? sesi.sesiId : opsi.sesiIdDikirim,
       muatan: opsi.muatan === undefined ? {} : opsi.muatan,
     },
+    ss: opsi.ss,
+    lockService: opsi.lockService,
   });
+}
+
+/** Dibaca lewat kepala kolom, supaya uji tetap sahih bila urutan kolom berubah. */
+function statusSesi(ss: SpreadsheetPalsu, sesiId: string): unknown {
+  const kisi = sheetWajib(ss, 'Sesi').getDataRange().getValues();
+  const kepala = kisi[0];
+  if (kepala === undefined) throw new Error('Sheet Sesi tidak punya kepala kolom.');
+  const kolomSesi = kepala.indexOf('sesi_id');
+  const kolomStatus = kepala.indexOf('status');
+  const baris = kisi.slice(1).find((satu) => satu[kolomSesi] === sesiId);
+  if (baris === undefined) throw new Error(`Sesi ${sesiId} tidak ada pada sheet Sesi.`);
+  return baris[kolomStatus];
 }
 
 /**
@@ -155,6 +190,7 @@ function panggil(opsi: OpsiPanggil): { balasan: Balasan; ss: SpreadsheetPalsu } 
 function panggilBadan(opsi: { email: string; badan: unknown; sesi?: Partial<BarisSesi> }): {
   balasan: Balasan;
   ss: SpreadsheetPalsu;
+  lockService: LockServicePalsu;
 } {
   const sesi: BarisSesi = { ...SESI_BAWAAN, ...opsi.sesi };
   return kirim({ email: opsi.email, kisiSesi: kisiDari([sesi]), badan: opsi.badan });
@@ -678,5 +714,162 @@ describe('sheet Sesi yang cacat gagal menutup, bukan membuka', () => {
       kisiSesi: kisiDari([SESI_BAWAAN, { ...SESI_BAWAAN, admin: ['lain@kampus.id'] }]),
     });
     expect(balasan.kode).toBe('SESI_CACAT');
+  });
+});
+
+describe('finalisasi sesi hanya boleh admin', () => {
+  it('menolak penilai yang mencoba memfinalkan', () => {
+    // §9.1 melarang penilai mengubah status sesi. Tombol yang disembunyikan
+    // tidak membuktikan apa pun; yang diperiksa adalah jawaban backend DAN sel
+    // yang benar-benar tersimpan.
+    const { balasan, ss } = panggil({ email: 'penilai@kampus.id', aksi: 'finalkanSesi' });
+    expect(balasan.ok).toBe(false);
+    expect(balasan.kode).toBe('BUKAN_ADMIN');
+    expect(statusSesi(ss, 'S1')).toBe('berjalan');
+  });
+
+  it('menolak orang di luar daftar yang mencoba memfinalkan', () => {
+    const { balasan, ss } = panggil({ email: 'orangluar@gmail.com', aksi: 'finalkanSesi' });
+    expect(balasan.kode).toBe('ORANG_TIDAK_DIKENAL');
+    expect(statusSesi(ss, 'S1')).toBe('berjalan');
+  });
+
+  it('menolak identitas kosong yang mencoba memfinalkan', () => {
+    const { balasan, ss } = panggil({ email: '', aksi: 'finalkanSesi' });
+    expect(balasan.kode).toBe('TANPA_IDENTITAS');
+    expect(statusSesi(ss, 'S1')).toBe('berjalan');
+  });
+});
+
+describe('finalisasi benar-benar mengubah sheet Sesi', () => {
+  it('menulis status final sebagai teks, bukan tipe lain', () => {
+    // setValue tidak memaksa tipe sel seperti appendRow, jadi apa yang ditulis
+    // adalah apa yang tersimpan. Pembanding status di seluruh backend memakai
+    // teks; sel bertipe lain akan lolos sebagai status tak dikenal.
+    const { balasan, ss } = panggil({ email: 'admin@kampus.id', aksi: 'finalkanSesi' });
+    expect(balasan.ok).toBe(true);
+    expect(balasan.kode).toBe('DIFINALKAN');
+    expect(balasan.status).toBe('final');
+    expect(statusSesi(ss, 'S1')).toBe('final');
+  });
+
+  it('memfinalkan sesi yang masih draft', () => {
+    const { balasan, ss } = panggil({
+      email: 'admin@kampus.id',
+      aksi: 'finalkanSesi',
+      sesi: { status: 'draft' },
+    });
+    expect(balasan.ok).toBe(true);
+    expect(statusSesi(ss, 'S1')).toBe('final');
+  });
+
+  it('tidak menyentuh baris sesi lain', () => {
+    // Menulis ke baris yang salah adalah kegagalan diam: sesi yang masih
+    // berjalan tertutup, sedangkan yang seharusnya ditutup tetap terbuka.
+    const { ss } = panggil({
+      email: 'admin@kampus.id',
+      aksi: 'finalkanSesi',
+      kisiSesi: kisiDari([SESI_BAWAAN, { ...SESI_BAWAAN, sesiId: 'S2' }]),
+    });
+    expect(statusSesi(ss, 'S1')).toBe('final');
+    expect(statusSesi(ss, 'S2')).toBe('berjalan');
+  });
+
+  it('menolak status yang tidak dikenal alih-alih menimpanya', () => {
+    const { balasan, ss } = panggil({
+      email: 'admin@kampus.id',
+      aksi: 'finalkanSesi',
+      sesi: { status: 'Selesai' },
+    });
+    expect(balasan.ok).toBe(false);
+    expect(balasan.kode).toBe('SESI_CACAT');
+    expect(statusSesi(ss, 'S1')).toBe('Selesai');
+  });
+
+  it('menolak sesi yang tidak ada', () => {
+    const { balasan } = panggil({
+      email: 'admin@kampus.id',
+      aksi: 'finalkanSesi',
+      sesiIdDikirim: 'S9',
+    });
+    expect(balasan.kode).toBe('SESI_TIDAK_ADA');
+  });
+});
+
+describe('sesi final menolak seluruh penulisan berikutnya', () => {
+  it('menolak simpanPenilaian tepat setelah finalisasi, dalam satu rangkaian', () => {
+    // Uji yang menyetel status "final" langsung di fixture tidak membuktikan
+    // finalisasi memindahkan sesi keluar dari daftar status yang boleh
+    // ditulisi. Rangkaian ini memakai ruang kerja yang sama persis.
+    const { ss } = panggil({ email: 'admin@kampus.id', aksi: 'finalkanSesi' });
+    const sebelum = sheetWajib(ss, 'Penilaian').getLastRow();
+    const { balasan } = panggil({
+      email: 'penilai@kampus.id',
+      aksi: 'simpanPenilaian',
+      muatan: MUATAN_PENILAIAN,
+      ss,
+    });
+    expect(balasan.ok).toBe(false);
+    expect(balasan.kode).toBe('SESI_FINAL');
+    expect(sheetWajib(ss, 'Penilaian').getLastRow()).toBe(sebelum);
+  });
+
+  it('menolak simpanPenilaian oleh admin sekalipun setelah finalisasi', () => {
+    const { ss } = panggil({ email: 'admin@kampus.id', aksi: 'finalkanSesi' });
+    const { balasan } = panggil({
+      email: 'admin@kampus.id',
+      aksi: 'simpanPenilaian',
+      muatan: MUATAN_PENILAIAN,
+      ss,
+    });
+    expect(balasan.kode).toBe('SESI_FINAL');
+  });
+
+  it('menolak ubahSkema setelah finalisasi', () => {
+    const { ss } = panggil({ email: 'admin@kampus.id', aksi: 'finalkanSesi' });
+    const { balasan } = panggil({ email: 'admin@kampus.id', aksi: 'ubahSkema', ss });
+    expect(balasan.kode).toBe('SESI_FINAL');
+  });
+
+  it('menolak finalisasi kedua dengan alasan yang jelas', () => {
+    // Keputusan Tugas 4: finalisasi TIDAK dibuat idempoten-sukses. Membuatnya
+    // sukses berarti satu aksi menulis boleh menyentuh sesi final, dan
+    // pengecualian itulah lubangnya. Balasan ok:true juga akan membuat layar
+    // melaporkan perubahan yang tidak pernah terjadi.
+    const { ss } = panggil({ email: 'admin@kampus.id', aksi: 'finalkanSesi' });
+    const { balasan } = panggil({ email: 'admin@kampus.id', aksi: 'finalkanSesi', ss });
+    expect(balasan.ok).toBe(false);
+    expect(balasan.kode).toBe('SESI_FINAL');
+    expect(statusSesi(ss, 'S1')).toBe('final');
+  });
+
+  it('tetap mengizinkan pembacaan rekap setelah finalisasi', () => {
+    // Sesi yang selesai justru yang paling sering dilaporkan.
+    const { ss } = panggil({ email: 'admin@kampus.id', aksi: 'finalkanSesi' });
+    const { balasan } = panggil({ email: 'penilai@kampus.id', aksi: 'bacaRekap', ss });
+    expect(balasan.kode).toBe('AKSI_BELUM_DIBANGUN');
+  });
+});
+
+describe('finalisasi menulis di dalam kunci', () => {
+  it('mengambil dan melepas kunci tepat sekali', () => {
+    const { lockService } = panggil({ email: 'admin@kampus.id', aksi: 'finalkanSesi' });
+    expect({
+      ambil: lockService.lock.jumlahAmbil,
+      lepas: lockService.lock.jumlahLepas,
+    }).toEqual({ ambil: 1, lepas: 1 });
+  });
+
+  it('menolak tanpa mengubah status bila kunci tidak bisa diambil', () => {
+    const lockService = buatLockServicePalsu({ batasWaktuHabis: true });
+    const { balasan, ss } = panggil({
+      email: 'admin@kampus.id',
+      aksi: 'finalkanSesi',
+      lockService,
+    });
+    expect(balasan.ok).toBe(false);
+    expect(balasan.kode).toBe('SEDANG_SIBUK');
+    expect(statusSesi(ss, 'S1')).toBe('berjalan');
+    expect(lockService.lock.jumlahAmbil).toBe(0);
   });
 });

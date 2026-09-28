@@ -26,10 +26,27 @@ export interface SheetPalsu {
   clear(): void;
 }
 
+export interface PenggunaPalsu {
+  getEmail(): string;
+}
+
 export interface SpreadsheetPalsu {
   getSheetByName(nama: string): SheetPalsu | null;
   insertSheet(nama: string): SheetPalsu;
   getSheets(): SheetPalsu[];
+  /** Google mengembalikan null untuk berkas di Shared Drive, dan melempar bila tidak berhak. */
+  getOwner(): PenggunaPalsu | null;
+}
+
+export interface OpsiSpreadsheet {
+  /**
+   * Bawaannya null — ruang kerja tanpa pemilik yang tercatat, seperti berkas
+   * di Shared Drive. Bawaan yang gagal menutup membuat uji yang lupa menyetel
+   * pemilik menjadi merah, bukan hijau karena alasan yang keliru.
+   */
+  pemilik?: string | null;
+  /** Google melempar bila skrip tidak berhak membaca pemilik berkas. */
+  pemilikMelempar?: boolean;
 }
 
 export interface LockPalsu {
@@ -187,11 +204,21 @@ function buatSheetPalsu(nama: string, isiAwal: unknown[][]): SheetPalsu {
   };
 }
 
-export function buatSpreadsheetPalsu(isiAwal: Record<string, unknown[][]>): SpreadsheetPalsu {
+export function buatSpreadsheetPalsu(
+  isiAwal: Record<string, unknown[][]>,
+  opsi: OpsiSpreadsheet = {},
+): SpreadsheetPalsu {
   const daftar: SheetPalsu[] = Object.entries(isiAwal).map(([nama, isi]) =>
     buatSheetPalsu(nama, isi),
   );
+  const pemilik = opsi.pemilik === undefined ? null : opsi.pemilik;
   return {
+    getOwner: () => {
+      if (opsi.pemilikMelempar === true) {
+        throw new Error('Skrip tidak berhak membaca pemilik berkas ini.');
+      }
+      return pemilik === null ? null : { getEmail: () => pemilik };
+    },
     getSheetByName: (nama) => {
       const ketemu = daftar.find((satu) => satu.getName() === nama);
       return ketemu === undefined ? null : ketemu;

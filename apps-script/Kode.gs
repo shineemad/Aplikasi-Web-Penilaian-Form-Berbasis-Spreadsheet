@@ -26,7 +26,18 @@ var SYARAT_AKSI = {
   simpanPenilaian: { peran: ['admin', 'penilai'], menulis: true },
   ubahSkema: { peran: ['admin'], menulis: true },
   ubahBobot: { peran: ['admin'], menulis: true },
+  finalkanSesi: { peran: ['admin'], menulis: true },
 };
+
+/**
+ * Penyiapan ruang kerja sengaja TIDAK ada di SYARAT_AKSI.
+ *
+ * Seluruh aksi di sana diputuskan `putuskanIzin_`, yang menimbang daftar peran
+ * pada baris sesi. Penyiapan justru dijalankan saat sheet `Sesi` belum ada,
+ * sehingga menyaringnya lewat jalur itu membuatnya mustahil dipakai pertama
+ * kali. Wewenangnya diputuskan terpisah oleh `wewenangPenyiapan_`.
+ */
+var AKSI_PENYIAPAN = 'siapkanRuangKerja';
 
 var NAMA_SHEET_SESI = 'Sesi';
 var NAMA_SHEET_PENILAIAN = 'Penilaian';
@@ -52,6 +63,46 @@ var KOLOM_PENILAIAN_WAJIB = [
 ];
 
 /**
+ * Kelima sheet Spreadsheet Ruang Kerja beserta kepala kolomnya, persis seperti
+ * spec §6.1–§6.5. Nama kolom diambil dari spec dan bukan dari ingatan: satu
+ * kolom yang salah eja membuat seluruh sistem membaca kolom yang keliru, dan
+ * kegagalannya diam — angkanya mendarat di tempat lain, bukan hilang.
+ *
+ * Kolom `meta_*` dan `jawaban_*` pada Responden tidak ada di sini karena
+ * namanya baru diketahui saat berkas diimpor; penyiapan hanya menyediakan
+ * kolom tetapnya. Kolom `pengamat` juga tidak ada: §6.4 belum punya kolom itu,
+ * dan menambahkannya sendiri berarti memutuskan koreksi C5 diam-diam.
+ */
+var KEPALA_RUANG_KERJA = [
+  {
+    nama: 'Proyek',
+    kepala: ['proyek_id', 'nama', 'sesi_urut', 'sesi_awal', 'sesi_akhir', 'dibuat_pada'],
+  },
+  {
+    nama: NAMA_SHEET_SESI,
+    kepala: ['sesi_id', 'proyek_id', 'nama', 'skema_id', 'mode', 'status', 'penilai', 'admin'],
+  },
+  {
+    nama: 'Responden',
+    kepala: ['sesi_id', 'id', 'email', 'nama', 'status_kelengkapan', 'diimpor_pada'],
+  },
+  {
+    nama: 'Skema',
+    kepala: [
+      'skema_id',
+      'kolom_asal',
+      'label',
+      'dimensi',
+      'aturan',
+      'parameter',
+      'skor_maks',
+      'bobot',
+    ],
+  },
+  { nama: NAMA_SHEET_PENILAIAN, kepala: KOLOM_PENILAIAN_WAJIB },
+];
+
+/**
  * Menunggu tanpa batas membekukan penilai lain sampai Apps Script sendiri
  * menyerah; lebih baik menolak dengan pesan yang menyuruh mencoba lagi.
  */
@@ -66,6 +117,23 @@ var BATAS_KUNCI_MS = 10000;
  */
 var STATUS_BOLEH_DITULIS = ['draft', 'berjalan'];
 
+var STATUS_FINAL = 'final';
+
+/**
+ * Dipakai dua jalur wewenang yang berbeda, jadi disatukan di sini: penyiapan
+ * ruang kerja tidak melewati `putuskanIzin_`, dan salah setel deployment harus
+ * terbaca sama di kedua jalur.
+ *
+ * Pesan ini DILARANG meresepkan mode deployment. Menyuruh pembacanya memilih
+ * "Pengguna yang mengakses" berarti menuntunnya membagikan Spreadsheet kepada
+ * setiap penilai, tepat yang §9.2 larang.
+ */
+var PESAN_TANPA_IDENTITAS =
+  'Google tidak mengirimkan identitas pemanggil, jadi tidak ada yang bisa dicocokkan dengan ' +
+  'daftar peran pada sheet Sesi. Akses anonim dan akun di luar domain yang diizinkan ' +
+  'sama-sama menghasilkan email kosong, sehingga mode deployment tidak boleh ditebak dari ' +
+  'pesan ini. Ikuti protokol keamanan proyek untuk menentukan dan membuktikan setelannya.';
+
 /** Titik masuk tunggal untuk seluruh permintaan dari frontend. */
 function doPost(e) {
   var permintaan = bacaPermintaan_(e);
@@ -76,6 +144,13 @@ function doPost(e) {
           'Periksa apa yang dikirim frontend sebelum mengulang.',
       ),
     );
+  }
+
+  // Penyiapan dijawab sebelum sesiId ditimbang. Ia justru dijalankan ketika
+  // sheet Sesi belum ada sama sekali, jadi mensyaratkan sesi yang sah di sini
+  // membuat ruang kerja baru mustahil disiapkan.
+  if (permintaan.aksi === AKSI_PENYIAPAN) {
+    return balas_(siapkanRuangKerja_(emailPemanggil_()));
   }
 
   // Larik dan angka lolos rapikanTeks_ menjadi teks yang tampak masuk akal,
@@ -122,6 +197,7 @@ function doPost(e) {
  */
 function jalankanAksi_(perintah) {
   if (perintah.aksi === 'simpanPenilaian') return simpanPenilaian_(perintah);
+  if (perintah.aksi === 'finalkanSesi') return finalkanSesi_(perintah);
 
   return {
     ok: false,
@@ -355,6 +431,331 @@ function bacaMuatanPenilaian_(muatan) {
 }
 
 /**
+ * Finalisasi menutup sesi dengan menulis `final` ke kolom status sheet `Sesi`.
+ *
+ * Sengaja TIDAK dibuat idempoten-sukses: memfinalkan sesi yang sudah final
+ * ditolak sebagai `SESI_FINAL`, sama seperti penulisan lain. Begitu satu aksi
+ * menulis dikecualikan dari aturan "sesi final menolak semuanya", pengecualian
+ * itulah lubangnya — dan balasan sukses atas sesi yang tidak berubah membuat
+ * layar melaporkan perubahan yang tidak pernah terjadi.
+ */
+function finalkanSesi_(perintah) {
+  var kunci = LockService.getScriptLock();
+  try {
+    kunci.waitLock(BATAS_KUNCI_MS);
+  } catch (galat) {
+    return {
+      ok: false,
+      kode: 'SEDANG_SIBUK',
+      sesiId: perintah.sesiId,
+      pesan:
+        'Ruang kerja sedang ditulisi permintaan lain, jadi sesi "' +
+        perintah.sesiId +
+        '" belum difinalkan. Coba lagi sebentar, lalu periksa kolom status pada sheet Sesi ' +
+        'sebelum mengumumkan sesi ini ditutup.',
+    };
+  }
+
+  try {
+    return tulisStatusFinal_(perintah);
+  } catch (galat) {
+    return {
+      ok: false,
+      kode: 'GAGAL_MENULIS',
+      sesiId: perintah.sesiId,
+      pesan:
+        'Status sesi gagal ditulis ke sheet Sesi: ' +
+        String(galat) +
+        '. Sesi "' +
+        perintah.sesiId +
+        '" masih terbuka dan tetap menerima penilaian, jadi kirim ulang setelah sebabnya diperbaiki.',
+    };
+  } finally {
+    kunci.releaseLock();
+  }
+}
+
+/**
+ * Dipanggil hanya dari dalam kunci.
+ *
+ * Sesi dibaca ULANG di sini alih-alih memakai hasil pemeriksaan izin: di antara
+ * keputusan izin dan penulisan ini, permintaan lain bisa saja sudah memfinalkan
+ * sesi yang sama, dan yang kedua akan menimpanya tanpa ada yang tahu.
+ */
+function tulisStatusFinal_(perintah) {
+  var sesi = cariSesi_(perintah.sesiId);
+  if (sesi.cacat !== '') {
+    return {
+      ok: false,
+      kode: 'SESI_CACAT',
+      sesiId: perintah.sesiId,
+      pesan:
+        'Sheet Sesi tidak bisa dipercaya: ' +
+        sesi.cacat +
+        '. Tidak ada baris yang difinalkan. Perbaiki sheet Sesi lebih dulu.',
+    };
+  }
+
+  if (sesi.ada !== true) {
+    return {
+      ok: false,
+      kode: 'SESI_TIDAK_ADA',
+      sesiId: perintah.sesiId,
+      pesan: 'Sesi "' + perintah.sesiId + '" sudah tidak ada saat gilirannya tiba, jadi tidak ada yang difinalkan.',
+    };
+  }
+
+  if (sesi.status === STATUS_FINAL) {
+    return {
+      ok: false,
+      kode: 'SESI_FINAL',
+      sesiId: sesi.sesiId,
+      pesan:
+        'Sesi "' +
+        sesi.sesiId +
+        '" sudah final, jadi tidak ada yang diubah. Kembalikan statusnya ke "berjalan" lewat ' +
+        'sheet Sesi bila memang masih perlu dinilai.',
+    };
+  }
+
+  if (!adaDalam_(STATUS_BOLEH_DITULIS, sesi.status)) {
+    return {
+      ok: false,
+      kode: 'SESI_CACAT',
+      sesiId: sesi.sesiId,
+      pesan:
+        'Sesi "' +
+        sesi.sesiId +
+        '" berstatus ' +
+        (sesi.status === '' ? 'kosong' : '"' + sesi.status + '"') +
+        ', bukan draft maupun berjalan. Karena tidak ada cara tahu apa yang sedang ditimpa, ' +
+        'statusnya dibiarkan apa adanya. Perbaiki kolom status pada sheet Sesi.',
+    };
+  }
+
+  SpreadsheetApp.getActive()
+    .getSheetByName(NAMA_SHEET_SESI)
+    .getRange(sesi.baris, sesi.kolomStatus)
+    .setValue(STATUS_FINAL);
+
+  return {
+    ok: true,
+    kode: 'DIFINALKAN',
+    sesiId: sesi.sesiId,
+    status: STATUS_FINAL,
+    pesan:
+      'Sesi "' +
+      sesi.sesiId +
+      '" difinalkan. Sejak sekarang seluruh penulisan ke sesi ini ditolak, termasuk dari admin; ' +
+      'rekapnya tetap bisa dibaca.',
+  };
+}
+
+/**
+ * Menyiapkan kelima sheet Ruang Kerja, idempoten dan tanpa menyentuh data lama.
+ *
+ * Wewenangnya diputuskan di sini, bukan oleh `putuskanIzin_`, karena penyiapan
+ * melingkar: ia membuat sheet `Sesi`, sedangkan daftar admin dibaca DARI sheet
+ * itu. Lihat `wewenangPenyiapan_` untuk cara lingkaran itu diputus dan untuk
+ * bagian yang masih menunggu keputusan pengguna.
+ */
+function siapkanRuangKerja_(emailSesi) {
+  var pemanggil = rapikanKecil_(emailSesi);
+  if (pemanggil === '') {
+    return { ok: false, kode: 'TANPA_IDENTITAS', pesan: PESAN_TANPA_IDENTITAS };
+  }
+
+  var berkas = SpreadsheetApp.getActive();
+  var berwenang = wewenangPenyiapan_(berkas);
+  if (berwenang.length === 0) {
+    return {
+      ok: false,
+      kode: 'PEMILIK_TIDAK_DIKETAHUI',
+      pesan:
+        'Spreadsheet ini tidak punya pemilik yang bisa dibaca skrip, dan sheet Sesi belum memuat ' +
+        'satu pun admin yang bisa dipercaya. Karena tidak ada satu pun identitas yang berwenang, ' +
+        'penyiapan ditolak alih-alih dibuka untuk siapa saja. Pindahkan Spreadsheet ke Drive ' +
+        'pribadi pemiliknya, atau buat sheet Sesi dengan tangan dan isi kolom admin lebih dulu.',
+    };
+  }
+
+  if (!adaDalam_(berwenang, pemanggil)) {
+    return {
+      ok: false,
+      kode: 'BUKAN_ADMIN',
+      pesan:
+        'Penyiapan ruang kerja hanya boleh dilakukan pemilik Spreadsheet Ruang Kerja atau orang ' +
+        'yang terdaftar pada kolom admin sheet Sesi. Email ' +
+        pemanggil +
+        ' bukan keduanya. Mintalah salah satu dari mereka yang menjalankannya.',
+    };
+  }
+
+  var kunci = LockService.getScriptLock();
+  try {
+    kunci.waitLock(BATAS_KUNCI_MS);
+  } catch (galat) {
+    return {
+      ok: false,
+      kode: 'SEDANG_SIBUK',
+      pesan:
+        'Ruang kerja sedang ditulisi permintaan lain, jadi tidak ada sheet yang dibuat. ' +
+        'Coba lagi sebentar.',
+    };
+  }
+
+  try {
+    return bangunRuangKerja_(berkas);
+  } catch (galat) {
+    return {
+      ok: false,
+      kode: 'GAGAL_MENYIAPKAN',
+      pesan:
+        'Penyiapan berhenti di tengah jalan: ' +
+        String(galat) +
+        '. Sebagian sheet mungkin sudah terbuat; jalankan lagi setelah sebabnya diperbaiki, ' +
+        'karena penyiapan aman diulang.',
+    };
+  } finally {
+    kunci.releaseLock();
+  }
+}
+
+/**
+ * Siapa yang boleh menyiapkan ruang kerja: pemilik Spreadsheet, ditambah setiap
+ * email pada kolom `admin` sheet `Sesi`.
+ *
+ * Pemilik dipakai karena ia satu-satunya identitas yang ada SEBELUM data apa
+ * pun ada — tanpanya ruang kerja baru mustahil disiapkan pertama kali. Daftar
+ * admin ditambahkan supaya penyiapan tetap dapat diulang oleh orang yang memang
+ * mengelola ruang kerja itu, bukan hanya oleh pemilik berkasnya.
+ *
+ * Spec tidak mengatur ini: §9.1 tidak menyebut penyiapan sebagai aksi, dan §6.4
+ * hanya menyimpan admin PER SESI, bukan admin ruang kerja. Aturan di sini adalah
+ * keputusan sendiri yang butuh dibenarkan pengguna; lihat koreksi C6 pada
+ * rencana store-dan-peran.
+ */
+function wewenangPenyiapan_(berkas) {
+  var daftar = [];
+  if (berkas === null || berkas === undefined) return daftar;
+
+  var pemilik = '';
+  try {
+    var orang = berkas.getOwner();
+    if (orang !== null && orang !== undefined) pemilik = rapikanKecil_(orang.getEmail());
+  } catch (galat) {
+    // Berkas di Shared Drive tidak punya pemilik, dan skrip bisa saja tidak
+    // berhak membacanya. Keduanya berarti "tidak tahu", bukan "boleh siapa saja".
+    pemilik = '';
+  }
+  if (pemilik !== '') daftar.push(pemilik);
+
+  var admin = adminRuangKerja_(berkas);
+  for (var i = 0; i < admin.length; i += 1) {
+    if (!adaDalam_(daftar, admin[i])) daftar.push(admin[i]);
+  }
+  return daftar;
+}
+
+/** Gabungan kolom `admin` seluruh baris sheet `Sesi`; kosong bila tidak bisa dipercaya. */
+function adminRuangKerja_(berkas) {
+  var sheet = berkas.getSheetByName(NAMA_SHEET_SESI);
+  if (sheet === null || sheet === undefined) return [];
+
+  var kisi = sheet.getDataRange().getValues();
+  var kepala = kisi.length === 0 ? [] : kisi[0];
+  var ditemukan = semuaKolom_(kepala, 'admin');
+  // Kolom admin yang hilang atau kembar berarti daftar yang tampak di layar
+  // belum tentu daftar yang dibaca backend. Menebak salah satunya membuka
+  // penyiapan untuk orang yang tidak pernah dituliskan siapa pun.
+  if (ditemukan.length !== 1) return [];
+
+  var hasil = [];
+  for (var b = 1; b < kisi.length; b += 1) {
+    var satuBaris = daftarEmail_(kisi[b][ditemukan[0]]);
+    for (var i = 0; i < satuBaris.length; i += 1) {
+      if (!adaDalam_(hasil, satuBaris[i])) hasil.push(satuBaris[i]);
+    }
+  }
+  return hasil;
+}
+
+/** Dipanggil hanya dari dalam kunci. Sheet yang sudah berisi data tidak pernah disentuh. */
+function bangunRuangKerja_(berkas) {
+  var dibuat = [];
+  var dilengkapi = [];
+  var dilewati = [];
+  var peringatan = [];
+
+  for (var i = 0; i < KEPALA_RUANG_KERJA.length; i += 1) {
+    var rencana = KEPALA_RUANG_KERJA[i];
+    var sheet = berkas.getSheetByName(rencana.nama);
+
+    // Memanggil insertSheet tanpa memeriksa lebih dulu akan melempar pada
+    // penyiapan kedua: Google menolak nama sheet yang kembar.
+    if (sheet === null || sheet === undefined) {
+      berkas.insertSheet(rencana.nama).appendRow(rencana.kepala);
+      dibuat.push(rencana.nama);
+      continue;
+    }
+
+    // getLastRow, bukan panjang getDataRange().getValues(): sheet kosong punya
+    // satu sel kosong, sehingga kisinya panjang 1 dan pemeriksaan panjang-nol
+    // menganggapnya berisi. Kepala kolomnya tidak akan pernah ditulis.
+    if (sheet.getLastRow() === 0) {
+      sheet.appendRow(rencana.kepala);
+      dilengkapi.push(rencana.nama);
+      continue;
+    }
+
+    dilewati.push(rencana.nama);
+    var kurang = kolomYangKurang_(sheet, rencana.kepala);
+    if (kurang.length > 0) {
+      peringatan.push(
+        'Sheet ' +
+          rencana.nama +
+          ' sudah berisi data, jadi tidak disentuh, tetapi kolom ' +
+          kurang.join(', ') +
+          ' tidak ada padanya. Tambahkan kolom itu dengan tangan; selama belum ada, sheet ini ' +
+          'ditolak saat dibaca maupun ditulisi.',
+      );
+    }
+  }
+
+  return {
+    ok: true,
+    kode: peringatan.length === 0 ? 'SIAP' : 'SIAP_DENGAN_PERINGATAN',
+    dibuat: dibuat,
+    dilengkapi: dilengkapi,
+    dilewati: dilewati,
+    peringatan: peringatan,
+    pesan:
+      'Sheet yang dibuat: ' +
+      ringkasDaftar_(dibuat) +
+      '. Dilengkapi kepala kolomnya: ' +
+      ringkasDaftar_(dilengkapi) +
+      '. Dilewati karena sudah berisi data: ' +
+      ringkasDaftar_(dilewati) +
+      '.',
+  };
+}
+
+/** Kolom wajib yang tidak ada, atau yang muncul lebih dari sekali pada kepala sheet. */
+function kolomYangKurang_(sheet, kepalaWajib) {
+  var kisi = sheet.getDataRange().getValues();
+  var kepala = kisi.length === 0 ? [] : kisi[0];
+  var kurang = [];
+  for (var i = 0; i < kepalaWajib.length; i += 1) {
+    if (semuaKolom_(kepala, kepalaWajib[i]).length !== 1) kurang.push(kepalaWajib[i]);
+  }
+  return kurang;
+}
+
+function ringkasDaftar_(daftar) {
+  return daftar.length === 0 ? 'tidak ada' : daftar.join(', ');
+}
+
+/**
  * Satu-satunya tempat tabel peran §9.1 diputuskan.
  *
  * Urutan pemeriksaannya disengaja, bukan mengikuti uji mana yang kebetulan
@@ -377,13 +778,7 @@ function bacaMuatanPenilaian_(muatan) {
 function putuskanIzin_(emailSesi, aksi, sesi) {
   var pemanggil = rapikanKecil_(emailSesi);
   if (pemanggil === '') {
-    return tolak_(
-      'TANPA_IDENTITAS',
-      'Google tidak mengirimkan identitas pemanggil, jadi tidak ada yang bisa dicocokkan dengan ' +
-        'daftar peran pada sheet Sesi. Akses anonim dan akun di luar domain yang diizinkan ' +
-        'sama-sama menghasilkan email kosong, sehingga mode deployment tidak boleh ditebak dari ' +
-        'pesan ini. Ikuti protokol keamanan proyek untuk menentukan dan membuktikan setelannya.',
-    );
+    return tolak_('TANPA_IDENTITAS', PESAN_TANPA_IDENTITAS);
   }
 
   if (sesi.cacat !== '') {
@@ -444,7 +839,7 @@ function putuskanIzin_(emailSesi, aksi, sesi) {
   }
 
   if (syarat.menulis === true) {
-    if (sesi.status === 'final') {
+    if (sesi.status === STATUS_FINAL) {
       return tolak_(
         'SESI_FINAL',
         'Sesi "' +
@@ -487,7 +882,16 @@ function emailPemanggil_() {
  */
 function cariSesi_(sesiId) {
   var kunci = rapikanTeks_(sesiId);
-  var kosong = { ada: false, cacat: '', sesiId: kunci, status: '', penilai: [], admin: [] };
+  var kosong = {
+    ada: false,
+    cacat: '',
+    sesiId: kunci,
+    status: '',
+    penilai: [],
+    admin: [],
+    baris: 0,
+    kolomStatus: 0,
+  };
   if (kunci === '') return kosong;
 
   var berkas = SpreadsheetApp.getActive();
@@ -524,13 +928,27 @@ function cariSesi_(sesiId) {
       status: rapikanKecil_(baris[posisi['status']]),
       penilai: daftarEmail_(baris[posisi['penilai']]),
       admin: daftarEmail_(baris[posisi['admin']]),
+      // Satu-satunya tempat posisi sel status ditentukan. Finalisasi memakainya
+      // apa adanya; mencarinya ulang dengan cara lain membuka kemungkinan izin
+      // diperiksa pada satu baris lalu status ditulis ke baris yang lain.
+      baris: b + 1,
+      kolomStatus: posisi['status'] + 1,
     };
   }
   return ketemu === null ? kosong : ketemu;
 }
 
 function cacatSesi_(sesiId, alasan) {
-  return { ada: false, cacat: alasan, sesiId: sesiId, status: '', penilai: [], admin: [] };
+  return {
+    ada: false,
+    cacat: alasan,
+    sesiId: sesiId,
+    status: '',
+    penilai: [],
+    admin: [],
+    baris: 0,
+    kolomStatus: 0,
+  };
 }
 
 /**
