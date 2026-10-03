@@ -10,6 +10,8 @@ const LIKERT: Aturan = {
   peta: { agree: 4, neutral: 3, 'strongly agree': 5 },
 };
 
+const MANUAL_10: Aturan = { jenis: 'manual', min: 0, maks: 10 };
+
 function butir(kolomAsal: string): ButirSkema {
   return { kolomAsal, label: kolomAsal, dimensi: 'd', aturan: LIKERT, bobot: 1 };
 }
@@ -142,5 +144,54 @@ describe('bangunNilaiSesi', () => {
     const sesi = bangunNilaiSesi(META, [ani, budi], SKEMA);
     expect(sesi.nilai.size).toBe(1);
     expect(sesi.dipadatkan.get(idKosong)).toBe(2);
+  });
+});
+
+describe('bangunNilaiSesi meneruskan nilai manual', () => {
+  const SKEMA_CAMPURAN: Skema = {
+    skemaId: 'campuran',
+    perlakuanKosong: 'abaikan',
+    butir: [
+      butir('q1'),
+      { kolomAsal: 'Esai', label: 'Esai', dimensi: 'e', aturan: MANUAL_10, bobot: 1 },
+    ],
+  };
+
+  it('memakai nilai manual responden yang bersangkutan', () => {
+    // Uji ini MERAH bila bangunNilaiSesi lupa meneruskan argumennya: tanpa
+    // nilai manual, butir Esai menunggu dan nilainya menjadi 100.
+    const sesi = bangunNilaiSesi(
+      META,
+      [responden('a', { q1: 'Strongly agree' })],
+      SKEMA_CAMPURAN,
+      new Map([['a', new Map([['Esai', 5]])]]),
+    );
+    expect(sesi.nilai.get('a')).toBe(75);
+  });
+
+  it('tidak memakai nilai manual milik responden lain', () => {
+    const sesi = bangunNilaiSesi(
+      META,
+      [responden('a', { q1: 'Strongly agree' }), responden('b', { q1: 'Strongly agree' })],
+      SKEMA_CAMPURAN,
+      new Map([['a', new Map([['Esai', 0]])]]),
+    );
+    expect(sesi.nilai.get('a')).toBe(50);
+    expect(sesi.nilai.get('b')).toBe(100);
+  });
+
+  it('membawa peringatan rentang ke dalam sesi', () => {
+    const sesi = bangunNilaiSesi(
+      META,
+      [responden('a', { q1: 'Strongly agree' })],
+      SKEMA_CAMPURAN,
+      new Map([['a', new Map([['Esai', 99]])]]),
+    );
+    expect(sesi.peringatan.get('a')?.join(' ')).toMatch(/rentang/i);
+  });
+
+  it('tanpa nilai manual, nilainya dihitung dari butir yang ada saja', () => {
+    const sesi = bangunNilaiSesi(META, [responden('a', { q1: 'Strongly agree' })], SKEMA_CAMPURAN);
+    expect(sesi.nilai.get('a')).toBe(100);
   });
 });

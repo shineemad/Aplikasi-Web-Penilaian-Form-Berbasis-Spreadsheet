@@ -37,3 +37,13 @@ export interface JawabanResponden {
   /** kolomAsal -> jawaban mentah, apa adanya dari spreadsheet */
   jawaban: Record<string, string>;
 }
+
+/** kolomAsal -> nilai yang ditulis penilai, untuk SATU responden. */
+export type NilaiManualResponden = ReadonlyMap<string, number>;
+
+/**
+ * respondenId -> nilai manual milik responden itu, untuk BANYAK responden.
+ * Dibedakan dari NilaiManualResponden agar typecheck yang menangkap bila
+ * keduanya tertukar.
+ */
+export type NilaiManualSesi = ReadonlyMap<string, NilaiManualResponden>;

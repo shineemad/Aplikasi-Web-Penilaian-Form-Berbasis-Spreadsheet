@@ -1,5 +1,11 @@
-import { skorJawaban, skorMaksAturan } from './scorer';
-import type { JawabanResponden, Skema } from './tipe';
+import { rentangNilaiManual, skorJawaban, skorMaksAturan } from './scorer';
+import type {
+  ButirSkema,
+  JawabanResponden,
+  NilaiManualResponden,
+  NilaiManualSesi,
+  Skema,
+} from './tipe';
 
 export interface HasilNilaiResponden {
   respondenId: string;
@@ -7,6 +13,13 @@ export interface HasilNilaiResponden {
   nilai: number | null;
   butirTerhitung: number;
   butirKosong: number;
+  /**
+   * Butir manual yang penilainya belum mengisi nilai. Dikeluarkan dari pembilang
+   * dan penyebut, tetapi dihitung di sini supaya tidak hilang tanpa jejak.
+   */
+  butirMenunggu: number;
+  /** kolomAsal butir yang skor otomatisnya ditimpa nilai dari penilai. */
+  butirDikoreksi: string[];
   peringatan: string[];
 }
 
@@ -18,17 +31,55 @@ export interface HasilIndeksDimensi {
   pasanganDihitung: number;
 }
 
+/** Hasil pemeriksaan satu nilai manual terhadap rentang butirnya. */
+type PeriksaManual =
+  | { status: 'tidak ada' }
+  | { status: 'sah'; nilai: number; koreksi: boolean }
+  | { status: 'di luar rentang'; pesan: string };
+
+function periksaNilaiManual(
+  butir: ButirSkema,
+  nilaiManual: NilaiManualResponden | undefined,
+): PeriksaManual {
+  const nilai = nilaiManual === undefined ? undefined : nilaiManual.get(butir.kolomAsal);
+  if (nilai === undefined) return { status: 'tidak ada' };
+
+  const rentang = rentangNilaiManual(butir.aturan);
+  if (rentang === null) {
+    return {
+      status: 'di luar rentang',
+      pesan: `${butir.label}: ada nilai ${nilai} dari penilai, tetapi kolom ini ditandai abaikan sehingga nilainya tidak dipakai.`,
+    };
+  }
+  if (!Number.isFinite(nilai) || nilai < rentang.min || nilai > rentang.maks) {
+    return {
+      status: 'di luar rentang',
+      pesan: `${butir.label}: nilai ${nilai} di luar rentang ${rentang.min}–${rentang.maks}, butir ini dikeluarkan dari perhitungan. Betulkan nilainya, jangan dibulatkan.`,
+    };
+  }
+  return { status: 'sah', nilai, koreksi: butir.aturan.jenis !== 'manual' };
+}
+
 export function hitungNilaiResponden(
   responden: JawabanResponden,
   skema: Skema,
+  nilaiManual?: NilaiManualResponden,
 ): HasilNilaiResponden {
   let totalBobot = 0;
   let totalTerbobot = 0;
   let butirTerhitung = 0;
   let butirKosong = 0;
+  let butirMenunggu = 0;
+  const butirDikoreksi: string[] = [];
   const peringatan: string[] = [];
 
   for (const butir of skema.butir) {
+    const manual = periksaNilaiManual(butir, nilaiManual);
+    if (manual.status === 'di luar rentang') {
+      peringatan.push(manual.pesan);
+      continue;
+    }
+
     const skorMaks = skorMaksAturan(butir.aturan);
     if (skorMaks === null) continue;
     if (!Number.isFinite(skorMaks) || skorMaks <= 0) {
@@ -38,13 +89,27 @@ export function hitungNilaiResponden(
       continue;
     }
 
+    if (manual.status === 'sah') {
+      if (manual.koreksi) butirDikoreksi.push(butir.kolomAsal);
+      butirTerhitung += 1;
+      totalBobot += butir.bobot;
+      totalTerbobot += butir.bobot * (manual.nilai / skorMaks);
+      continue;
+    }
+
     const hasil = skorJawaban(responden.jawaban[butir.kolomAsal], butir.aturan);
 
     if (hasil.status === 'peringatan') {
       peringatan.push(`${butir.label}: ${hasil.pesan}`);
       continue;
     }
-    if (hasil.status === 'butuh-manual' || hasil.status === 'diabaikan') continue;
+    // Butir manual yang belum dinilai dikeluarkan dari kedua sisi pecahan tanpa
+    // memedulikan perlakuanKosong: yang belum bekerja adalah penilai.
+    if (hasil.status === 'butuh-manual') {
+      butirMenunggu += 1;
+      continue;
+    }
+    if (hasil.status === 'diabaikan') continue;
 
     if (hasil.status === 'kosong') {
       butirKosong += 1;
@@ -59,7 +124,15 @@ export function hitungNilaiResponden(
   }
 
   const nilai = totalBobot === 0 ? null : (totalTerbobot / totalBobot) * 100;
-  return { respondenId: responden.id, nilai, butirTerhitung, butirKosong, peringatan };
+  return {
+    respondenId: responden.id,
+    nilai,
+    butirTerhitung,
+    butirKosong,
+    butirMenunggu,
+    butirDikoreksi,
+    peringatan,
+  };
 }
 
 interface Akumulasi {
@@ -71,6 +144,7 @@ interface Akumulasi {
 export function hitungIndeksDimensi(
   semuaResponden: JawabanResponden[],
   skema: Skema,
+  nilaiManual?: NilaiManualSesi,
 ): HasilIndeksDimensi[] {
   const urutanDimensi: string[] = [];
   const akumulasi = new Map<string, Akumulasi>();
@@ -79,7 +153,6 @@ export function hitungIndeksDimensi(
     const skorMaks = skorMaksAturan(butir.aturan);
     if (skorMaks === null) continue;
     if (!Number.isFinite(skorMaks) || skorMaks <= 0) continue;
-    if (butir.aturan.jenis === 'manual') continue;
 
     if (!akumulasi.has(butir.dimensi)) {
       urutanDimensi.push(butir.dimensi);
@@ -89,6 +162,18 @@ export function hitungIndeksDimensi(
     if (agg === undefined) continue;
 
     for (const responden of semuaResponden) {
+      const manual = periksaNilaiManual(
+        butir,
+        nilaiManual === undefined ? undefined : nilaiManual.get(responden.id),
+      );
+      if (manual.status === 'di luar rentang') continue;
+      if (manual.status === 'sah') {
+        agg.jumlahSkor += manual.nilai;
+        agg.jumlahMaks += skorMaks;
+        agg.pasangan += 1;
+        continue;
+      }
+
       const hasil = skorJawaban(responden.jawaban[butir.kolomAsal], butir.aturan);
 
       if (hasil.status === 'terhitung') {
@@ -123,7 +208,7 @@ export function hitungIndeksKeseluruhan(
 ): number | null {
   const bobotDimensi = new Map<string, number>();
   for (const butir of skema.butir) {
-    if (butir.aturan.jenis === 'abaikan' || butir.aturan.jenis === 'manual') continue;
+    if (butir.aturan.jenis === 'abaikan') continue;
     const sekarang = bobotDimensi.get(butir.dimensi);
     bobotDimensi.set(butir.dimensi, (sekarang === undefined ? 0 : sekarang) + butir.bobot);
   }

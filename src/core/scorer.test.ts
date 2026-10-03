@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { skorJawaban, skorMaksAturan } from './scorer';
+import { rentangNilaiManual, skorJawaban, skorMaksAturan } from './scorer';
 import type { Aturan } from './tipe';
 
 const LIKERT: Aturan = {
@@ -127,5 +127,23 @@ describe('skorMaksAturan', () => {
 
   it('mengembalikan null untuk abaikan', () => {
     expect(skorMaksAturan({ jenis: 'abaikan' })).toBe(null);
+  });
+});
+
+describe('rentangNilaiManual', () => {
+  it('memakai min dan maks aturan manual apa adanya', () => {
+    expect(rentangNilaiManual({ jenis: 'manual', min: 1, maks: 5 })).toEqual({ min: 1, maks: 5 });
+  });
+
+  it('membatasi koreksi peta-opsi pada nol sampai skorMaks', () => {
+    expect(rentangNilaiManual(LIKERT)).toEqual({ min: 0, maks: 5 });
+  });
+
+  it('membatasi koreksi kunci-jawaban pada nol sampai satu', () => {
+    expect(rentangNilaiManual({ jenis: 'kunci-jawaban', kunci: 'B' })).toEqual({ min: 0, maks: 1 });
+  });
+
+  it('mengembalikan null untuk abaikan karena butirnya memang tidak dinilai', () => {
+    expect(rentangNilaiManual({ jenis: 'abaikan' })).toBe(null);
   });
 });

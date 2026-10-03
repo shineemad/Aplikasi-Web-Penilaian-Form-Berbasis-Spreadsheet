@@ -14,6 +14,23 @@ export function skorMaksAturan(aturan: Aturan): number | null {
   }
 }
 
+/**
+ * Rentang nilai manual yang sah bagi sebuah aturan. `null` berarti butirnya
+ * memang tidak dinilai, sehingga nilai manual untuknya tidak punya arti.
+ */
+export function rentangNilaiManual(aturan: Aturan): { min: number; maks: number } | null {
+  switch (aturan.jenis) {
+    case 'manual':
+      return { min: aturan.min, maks: aturan.maks };
+    case 'peta-opsi':
+      return { min: 0, maks: aturan.skorMaks };
+    case 'kunci-jawaban':
+      return { min: 0, maks: 1 };
+    case 'abaikan':
+      return null;
+  }
+}
+
 export function skorJawaban(
   jawaban: string | null | undefined,
   aturan: Aturan,

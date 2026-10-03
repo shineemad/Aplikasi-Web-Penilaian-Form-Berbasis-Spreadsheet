@@ -1,7 +1,7 @@
 import { hitungNilaiResponden } from './aggregator';
 import { diisiResponden, hitungKelengkapan } from './kelengkapan';
 import type { NilaiSesi } from './merger';
-import type { JawabanResponden, Skema } from './tipe';
+import type { JawabanResponden, NilaiManualSesi, Skema } from './tipe';
 
 export interface MetaSesi {
   sesiId: string;
@@ -17,6 +17,7 @@ export function bangunNilaiSesi(
   meta: MetaSesi,
   responden: RespondenSesi[],
   skema: Skema,
+  nilaiManual?: NilaiManualSesi,
 ): NilaiSesi {
   const nilai = new Map<string, number | null>();
   const identitas = new Map<
@@ -33,7 +34,11 @@ export function bangunNilaiSesi(
       dipadatkan.set(satu.id, sebelumnya === undefined ? 2 : sebelumnya + 1);
     }
 
-    const hasil = hitungNilaiResponden(satu, skema);
+    const hasil = hitungNilaiResponden(
+      satu,
+      skema,
+      nilaiManual === undefined ? undefined : nilaiManual.get(satu.id),
+    );
     nilai.set(satu.id, hasil.nilai);
     identitas.set(satu.id, { email: satu.email, nama: satu.nama, meta: satu.meta });
 
