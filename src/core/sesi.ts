@@ -25,6 +25,8 @@ export function bangunNilaiSesi(
     { email: string; nama: string | null; meta: Record<string, string> }
   >();
   const kurang = new Map<string, number>();
+  const menunggu = new Map<string, number>();
+  const dikoreksi = new Map<string, string[]>();
   const peringatan = new Map<string, string[]>();
   const dipadatkan = new Map<string, number>();
 
@@ -50,6 +52,12 @@ export function bangunNilaiSesi(
 
     if (hasil.peringatan.length > 0) peringatan.set(satu.id, hasil.peringatan);
     else peringatan.delete(satu.id);
+
+    if (hasil.butirMenunggu > 0) menunggu.set(satu.id, hasil.butirMenunggu);
+    else menunggu.delete(satu.id);
+
+    if (hasil.butirDikoreksi.length > 0) dikoreksi.set(satu.id, hasil.butirDikoreksi);
+    else dikoreksi.delete(satu.id);
   }
 
   return {
@@ -59,6 +67,8 @@ export function bangunNilaiSesi(
     nilai,
     identitas,
     kurang,
+    menunggu,
+    dikoreksi,
     peringatan,
     dipadatkan,
   };

@@ -135,8 +135,14 @@ describe('rentangNilaiManual', () => {
     expect(rentangNilaiManual({ jenis: 'manual', min: 1, maks: 5 })).toEqual({ min: 1, maks: 5 });
   });
 
-  it('membatasi koreksi peta-opsi pada nol sampai skorMaks', () => {
-    expect(rentangNilaiManual(LIKERT)).toEqual({ min: 0, maks: 5 });
+  it('memakai skor terendah pada peta sebagai lantai koreksi peta-opsi', () => {
+    // Likert 1..5 tidak pernah menghasilkan 0, jadi 0 bukan koreksi yang sah.
+    expect(rentangNilaiManual(LIKERT)).toEqual({ min: 1, maks: 5 });
+  });
+
+  it('mengizinkan nol bila petanya memang memuat nol', () => {
+    const benarSalah: Aturan = { jenis: 'peta-opsi', skorMaks: 1, peta: { salah: 0, benar: 1 } };
+    expect(rentangNilaiManual(benarSalah)).toEqual({ min: 0, maks: 1 });
   });
 
   it('membatasi koreksi kunci-jawaban pada nol sampai satu', () => {

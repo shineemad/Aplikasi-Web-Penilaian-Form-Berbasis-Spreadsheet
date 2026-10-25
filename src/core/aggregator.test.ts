@@ -31,10 +31,45 @@ function responden(id: string, jawaban: Record<string, string>): JawabanResponde
 }
 
 const MANUAL_10: Aturan = { jenis: 'manual', min: 0, maks: 10 };
+const MANUAL_100: Aturan = { jenis: 'manual', min: 0, maks: 100 };
 const RUBRIK_1_5: Aturan = { jenis: 'manual', min: 1, maks: 5 };
 // Satu-satunya opsi bernilai 2,5 supaya ketiga kemungkinan penanganan nilai di
 // luar rentang menghasilkan angka yang berbeda: 50, 75, dan 95.
 const PECAHAN: Aturan = { jenis: 'peta-opsi', skorMaks: 5, peta: { tengah: 2.5 } };
+
+/** Empat butir Likert dan satu esai 0..100, seluruhnya di SATU dimensi. */
+const SKEMA_SKALA_CAMPURAN: Skema = {
+  skemaId: 'skala-campuran',
+  perlakuanKosong: 'abaikan',
+  butir: [
+    { kolomAsal: 'q1', label: 'Butir 1', dimensi: 'layanan', aturan: LIKERT, bobot: 1 },
+    { kolomAsal: 'q2', label: 'Butir 2', dimensi: 'layanan', aturan: LIKERT, bobot: 1 },
+    { kolomAsal: 'q3', label: 'Butir 3', dimensi: 'layanan', aturan: LIKERT, bobot: 1 },
+    { kolomAsal: 'q4', label: 'Butir 4', dimensi: 'layanan', aturan: LIKERT, bobot: 1 },
+    { kolomAsal: 'Esai', label: 'Esai', dimensi: 'layanan', aturan: MANUAL_100, bobot: 1 },
+  ],
+};
+
+/** Dua butir manual sedimensi: bentuk peta nilai yang paling sering ditemui. */
+const SKEMA_DUA_ESAI: Skema = {
+  skemaId: 'dua-esai',
+  perlakuanKosong: 'abaikan',
+  butir: [
+    { kolomAsal: 'E1', label: 'Esai 1', dimensi: 'esai', aturan: MANUAL_10, bobot: 1 },
+    { kolomAsal: 'E2', label: 'Esai 2', dimensi: 'esai', aturan: MANUAL_10, bobot: 1 },
+  ],
+};
+
+/** Dimensi B memuat butir berbobot 2 yang masih menunggu penilaian. */
+const SKEMA_MENUNGGU_BERBOBOT: Skema = {
+  skemaId: 'menunggu-berbobot',
+  perlakuanKosong: 'abaikan',
+  butir: [
+    { kolomAsal: 'qa', label: 'Butir A', dimensi: 'A', aturan: LIKERT, bobot: 1 },
+    { kolomAsal: 'qb', label: 'Butir B', dimensi: 'B', aturan: LIKERT, bobot: 1 },
+    { kolomAsal: 'Esai', label: 'Esai', dimensi: 'B', aturan: MANUAL_10, bobot: 2 },
+  ],
+};
 
 function skemaDuaButir(
   aturanEsai: Aturan,
@@ -321,6 +356,75 @@ describe('hitungNilaiResponden dengan nilai manual', () => {
     expect(hasil.peringatan.join(' ')).toContain('Esai');
     expect(hasil.peringatan.join(' ')).toMatch(/abaikan/i);
   });
+
+  it('memberi 20 untuk rubrik 1..5 yang dinilai 1 — batas bawahnya, bukan nol', () => {
+    // Batas atas sudah diuji; batas bawah sebelumnya hanya benar karena kebetulan.
+    const hasil = hitungNilaiResponden(
+      responden('a', {}),
+      skemaDuaButir(RUBRIK_1_5, { jenis: 'abaikan' }),
+      new Map([['Esai', 1]]),
+    );
+    expect(hasil.nilai).toBe(20);
+    expect(hasil.peringatan).toEqual([]);
+    expect(hasil.butirTerhitung).toBe(1);
+  });
+
+  it('menolak koreksi 0 pada butir Likert 1..5', () => {
+    // Lantai skala Likert adalah 1 dari 5, yaitu 20 persen. Menerima 0 di situ
+    // menghasilkan nilai 0 persen — angka yang tidak dapat dicapai siapa pun
+    // yang benar-benar menjawab butirnya.
+    const hasil = hitungNilaiResponden(
+      responden('a', { q1: 'Disagree' }),
+      skemaDuaButir({ jenis: 'abaikan' }),
+      new Map([['q1', 0]]),
+    );
+    expect(hasil.nilai).toBe(null);
+    expect(hasil.peringatan.join(' ')).toMatch(/rentang/i);
+    expect(hasil.butirDikoreksi).toEqual([]);
+  });
+
+  it('menolak nilai manual yang bukan angka', () => {
+    const hasil = hitungNilaiResponden(
+      responden('a', { q1: 'Strongly agree' }),
+      skemaDuaButir(MANUAL_10),
+      new Map([['Esai', Number.NaN]]),
+    );
+    expect(hasil.nilai).toBe(100);
+    expect(hasil.peringatan.join(' ')).toMatch(/rentang/i);
+  });
+
+  it('tidak menghitung nilai di luar rentang sebagai butir menunggu', () => {
+    // Penilainya sudah bekerja; nilainya yang salah. Menyatukan keduanya membuat
+    // "belum dinilai" dan "salah dinilai" menjadi satu angka.
+    const hasil = hitungNilaiResponden(
+      responden('a', { q1: 'Strongly agree' }),
+      skemaDuaButir(MANUAL_10),
+      new Map([['Esai', 99]]),
+    );
+    expect(hasil.butirMenunggu).toBe(0);
+    expect(hasil.peringatan.join(' ')).toMatch(/rentang/i);
+  });
+
+  it('memakai koreksi pada jawaban yang kosong tanpa menghitungnya sebagai butir kosong', () => {
+    const hasil = hitungNilaiResponden(
+      responden('a', { q1: '' }),
+      skemaDuaButir({ jenis: 'abaikan' }),
+      new Map([['q1', 4]]),
+    );
+    expect(hasil.nilai).toBe(80);
+    expect(hasil.butirKosong).toBe(0);
+    expect(hasil.butirDikoreksi).toEqual(['q1']);
+  });
+
+  it('menunggu butir manual yang belum ada di peta nilai', () => {
+    // Bentuk peta yang paling sering ditemui: penilai baru mengisi sebagian
+    // butir. Kunci yang hilang berarti BELUM DINILAI, bukan bernilai nol —
+    // kalau nol, nilainya menjadi 40.
+    const hasil = hitungNilaiResponden(responden('a', {}), SKEMA_DUA_ESAI, new Map([['E1', 8]]));
+    expect(hasil.nilai).toBe(80);
+    expect(hasil.butirTerhitung).toBe(1);
+    expect(hasil.butirMenunggu).toBe(1);
+  });
 });
 
 describe('hitungIndeksDimensi', () => {
@@ -453,16 +557,151 @@ describe('hitungIndeksDimensi', () => {
     expect(esai?.indeks).toBeCloseTo(100, 10);
     expect(esai?.pasanganDihitung).toBe(1);
   });
+
+  it('menyetarakan butir berskala berbeda di dalam satu dimensi', () => {
+    // Empat butir Likert bernilai 5/5 dan satu esai 0..100 bernilai 50, seluruh
+    // bobot sama. Rata-rata rasio: (1 + 1 + 1 + 1 + 0,5) / 5 = 0,9 -> 90.
+    // Menjumlahkan skor mentah lalu membaginya dengan jumlah skor maksimum
+    // menghasilkan 70/120 = 58,3 — esainya membobot dirinya sendiri 20 kali
+    // lipat satu butir Likert.
+    const jawaban = {
+      q1: 'Strongly agree',
+      q2: 'Strongly agree',
+      q3: 'Strongly agree',
+      q4: 'Strongly agree',
+    };
+    const hasil = hitungIndeksDimensi(
+      [responden('a', jawaban)],
+      SKEMA_SKALA_CAMPURAN,
+      new Map([['a', new Map([['Esai', 50]])]]),
+    );
+    expect(hasil[0]?.indeks).toBeCloseTo(90, 10);
+    // Spec 8.2: bila seluruh bobot butir sama, indeksnya setara dengan rata-rata
+    // sederhana seluruh butir — yaitu nilai responden itu sendiri.
+    const nilai = hitungNilaiResponden(
+      responden('a', jawaban),
+      SKEMA_SKALA_CAMPURAN,
+      new Map([['Esai', 50]]),
+    );
+    expect(Number(nilai.nilai)).toBeCloseTo(90, 10);
+  });
+
+  it('meninggalkan jejak nilai di luar rentang dan butir yang menunggu', () => {
+    const hasil = hitungIndeksDimensi(
+      [responden('a', {}), responden('b', {}), responden('c', {})],
+      skemaDuaButir(MANUAL_10),
+      new Map([
+        ['a', new Map([['Esai', 8]])],
+        ['b', new Map([['Esai', 99]])],
+      ]),
+    );
+    const esai = hasil.find((d) => d.dimensi === 'esai');
+    expect(esai?.indeks).toBeCloseTo(80, 10);
+    expect(esai?.pasanganDihitung).toBe(1);
+    // Hanya c yang menunggu. Nilai b salah, bukan belum ada.
+    expect(esai?.pasanganMenunggu).toBe(1);
+    expect(esai?.peringatan.join(' ')).toContain('99');
+  });
+
+  it('memperingatkan nilai manual pada kolom yang ditandai abaikan', () => {
+    const hasil = hitungIndeksDimensi(
+      [responden('a', { q1: 'Strongly agree' })],
+      skemaDuaButir({ jenis: 'abaikan' }),
+      new Map([['a', new Map([['Esai', 5]])]]),
+    );
+    const esai = hasil.find((d) => d.dimensi === 'esai');
+    expect(esai?.indeks).toBe(null);
+    expect(esai?.peringatan.join(' ')).toContain('Esai');
+    expect(esai?.peringatan.join(' ')).toMatch(/abaikan/i);
+  });
+
+  it('membawa peringatan opsi tak dikenal ke dimensinya', () => {
+    const hasil = hitungIndeksDimensi(
+      [responden('a', { q1: 'Strongly agree', q2: 'Maybe', q3: 'Agree' })],
+      skemaLikert('abaikan'),
+    );
+    expect(hasil[0]?.peringatan.join(' ')).toContain('Butir 2');
+  });
+
+  it('tidak mengulang peringatan yang sama untuk tiap responden', () => {
+    const hasil = hitungIndeksDimensi(
+      [responden('a', { q2: 'Maybe' }), responden('b', { q2: 'Maybe' })],
+      skemaLikert('abaikan'),
+    );
+    expect(hasil[0]?.peringatan).toHaveLength(1);
+  });
+
+  it('menolak nilai manual yang bukan angka', () => {
+    const hasil = hitungIndeksDimensi(
+      [responden('a', {})],
+      skemaDuaButir(MANUAL_10),
+      new Map([['a', new Map([['Esai', Number.NaN]])]]),
+    );
+    const esai = hasil.find((d) => d.dimensi === 'esai');
+    expect(esai?.indeks).toBe(null);
+    expect(esai?.pasanganDihitung).toBe(0);
+    expect(esai?.peringatan.join(' ')).toMatch(/rentang/i);
+  });
+
+  it('memakai koreksi pada jawaban yang kosong', () => {
+    const hasil = hitungIndeksDimensi(
+      [responden('a', { q1: '' })],
+      skemaDuaButir({ jenis: 'abaikan' }, LIKERT, 'nol'),
+      new Map([['a', new Map([['q1', 4]])]]),
+    );
+    const otomatis = hasil.find((d) => d.dimensi === 'otomatis');
+    // Tanpa koreksi, perlakuan nol membuatnya 0.
+    expect(otomatis?.indeks).toBeCloseTo(80, 10);
+    expect(otomatis?.pasanganDihitung).toBe(1);
+  });
+
+  it('memakai koreksi pada opsi tak dikenal tanpa memperingatkannya lagi', () => {
+    const hasil = hitungIndeksDimensi(
+      [responden('a', { q1: 'Maybe' })],
+      skemaDuaButir({ jenis: 'abaikan' }),
+      new Map([['a', new Map([['q1', 4]])]]),
+    );
+    const otomatis = hasil.find((d) => d.dimensi === 'otomatis');
+    expect(otomatis?.indeks).toBeCloseTo(80, 10);
+    expect(otomatis?.peringatan).toEqual([]);
+  });
+
+  it('menunggu butir manual yang belum ada di peta nilai', () => {
+    // Kunci yang hilang berarti belum dinilai. Bila dianggap nol, indeksnya 40.
+    const hasil = hitungIndeksDimensi(
+      [responden('a', {})],
+      SKEMA_DUA_ESAI,
+      new Map([['a', new Map([['E1', 8]])]]),
+    );
+    expect(hasil[0]?.indeks).toBeCloseTo(80, 10);
+    expect(hasil[0]?.pasanganDihitung).toBe(1);
+    expect(hasil[0]?.pasanganMenunggu).toBe(1);
+    expect(hasil[0]?.bobotDihitung).toBe(1);
+  });
 });
 
 describe('hitungIndeksKeseluruhan', () => {
   it('merata-ratakan dimensi dengan bobot butirnya', () => {
     const skema = skemaLikert('abaikan');
-    // kemudahan (bobot total 2) = 100, kepuasan (bobot total 1) = 20
+    // kemudahan (bobot terhitung 2) = 100, kepuasan (bobot terhitung 1) = 20
     const hasil = hitungIndeksKeseluruhan(
       [
-        { dimensi: 'kemudahan', indeks: 100, pasanganDihitung: 2 },
-        { dimensi: 'kepuasan', indeks: 20, pasanganDihitung: 1 },
+        {
+          dimensi: 'kemudahan',
+          indeks: 100,
+          pasanganDihitung: 2,
+          pasanganMenunggu: 0,
+          bobotDihitung: 2,
+          peringatan: [],
+        },
+        {
+          dimensi: 'kepuasan',
+          indeks: 20,
+          pasanganDihitung: 1,
+          pasanganMenunggu: 0,
+          bobotDihitung: 1,
+          peringatan: [],
+        },
       ],
       skema,
     );
@@ -473,8 +712,22 @@ describe('hitungIndeksKeseluruhan', () => {
     const skema = skemaLikert('abaikan');
     const hasil = hitungIndeksKeseluruhan(
       [
-        { dimensi: 'kemudahan', indeks: null, pasanganDihitung: 0 },
-        { dimensi: 'kepuasan', indeks: 80, pasanganDihitung: 1 },
+        {
+          dimensi: 'kemudahan',
+          indeks: null,
+          pasanganDihitung: 0,
+          pasanganMenunggu: 0,
+          bobotDihitung: 0,
+          peringatan: [],
+        },
+        {
+          dimensi: 'kepuasan',
+          indeks: 80,
+          pasanganDihitung: 1,
+          pasanganMenunggu: 0,
+          bobotDihitung: 1,
+          peringatan: [],
+        },
       ],
       skema,
     );
@@ -485,8 +738,22 @@ describe('hitungIndeksKeseluruhan', () => {
     const skema = skemaLikert('abaikan');
     const hasil = hitungIndeksKeseluruhan(
       [
-        { dimensi: 'kemudahan', indeks: null, pasanganDihitung: 0 },
-        { dimensi: 'kepuasan', indeks: null, pasanganDihitung: 0 },
+        {
+          dimensi: 'kemudahan',
+          indeks: null,
+          pasanganDihitung: 0,
+          pasanganMenunggu: 0,
+          bobotDihitung: 0,
+          peringatan: [],
+        },
+        {
+          dimensi: 'kepuasan',
+          indeks: null,
+          pasanganDihitung: 0,
+          pasanganMenunggu: 0,
+          bobotDihitung: 0,
+          peringatan: [],
+        },
       ],
       skema,
     );
@@ -498,11 +765,43 @@ describe('hitungIndeksKeseluruhan', () => {
     // indeks keseluruhan dan hasilnya menjadi 100 tanpa jejak.
     const hasil = hitungIndeksKeseluruhan(
       [
-        { dimensi: 'otomatis', indeks: 100, pasanganDihitung: 1 },
-        { dimensi: 'esai', indeks: 50, pasanganDihitung: 1 },
+        {
+          dimensi: 'otomatis',
+          indeks: 100,
+          pasanganDihitung: 1,
+          pasanganMenunggu: 0,
+          bobotDihitung: 1,
+          peringatan: [],
+        },
+        {
+          dimensi: 'esai',
+          indeks: 50,
+          pasanganDihitung: 1,
+          pasanganMenunggu: 0,
+          bobotDihitung: 1,
+          peringatan: [],
+        },
       ],
       skemaDuaButir(MANUAL_10),
     );
     expect(hasil).toBeCloseTo(75, 10);
+  });
+
+  it('tidak membobot dimensi dengan butir yang belum dinilai', () => {
+    // Dimensi A: satu Likert 5/5 (bobot 1). Dimensi B: satu Likert 1/5 (bobot 1)
+    // dan satu esai berbobot 2 yang masih menunggu.
+    // Benar: (1x100 + 1x20) / 2 = 60, sama dengan nilai respondennya.
+    // Bila bobot esai yang menunggu ikut: (1x100 + 3x20) / 4 = 40.
+    const jawaban = { qa: 'Strongly agree', qb: 'Strongly disagree' };
+    const dimensi = hitungIndeksDimensi([responden('a', jawaban)], SKEMA_MENUNGGU_BERBOBOT);
+
+    const b = dimensi.find((d) => d.dimensi === 'B');
+    expect(b?.indeks).toBeCloseTo(20, 10);
+    expect(b?.bobotDihitung).toBe(1);
+    expect(b?.pasanganMenunggu).toBe(1);
+
+    expect(Number(hitungIndeksKeseluruhan(dimensi, SKEMA_MENUNGGU_BERBOBOT))).toBeCloseTo(60, 10);
+    const nilai = hitungNilaiResponden(responden('a', jawaban), SKEMA_MENUNGGU_BERBOBOT);
+    expect(Number(nilai.nilai)).toBeCloseTo(60, 10);
   });
 });

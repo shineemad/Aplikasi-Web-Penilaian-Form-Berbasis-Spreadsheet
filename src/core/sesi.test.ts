@@ -198,4 +198,63 @@ describe('bangunNilaiSesi meneruskan nilai manual', () => {
     const sesi = bangunNilaiSesi(META, [responden('a', { q1: 'Strongly agree' })], SKEMA_CAMPURAN);
     expect(sesi.nilai.get('a')).toBe(100);
   });
+
+  it('mencatat jumlah butir yang menunggu penilaian', () => {
+    // Batasan Global 21: nilai 100 boleh muncul, asalkan tidak sendirian.
+    const sesi = bangunNilaiSesi(META, [responden('a', { q1: 'Strongly agree' })], SKEMA_CAMPURAN);
+    expect(sesi.nilai.get('a')).toBe(100);
+    expect(sesi.menunggu.get('a')).toBe(1);
+  });
+
+  it('tidak mencatat entri menunggu bila seluruh butir sudah dinilai', () => {
+    const sesi = bangunNilaiSesi(
+      META,
+      [responden('a', { q1: 'Strongly agree' })],
+      SKEMA_CAMPURAN,
+      new Map([['a', new Map([['Esai', 5]])]]),
+    );
+    expect(sesi.menunggu.has('a')).toBe(false);
+  });
+
+  it('mencatat kolom yang skor otomatisnya dikoreksi', () => {
+    const sesi = bangunNilaiSesi(
+      META,
+      [responden('a', { q1: 'Neutral' })],
+      SKEMA_CAMPURAN,
+      new Map([['a', new Map([['q1', 5]])]]),
+    );
+    expect(sesi.dikoreksi.get('a')).toEqual(['q1']);
+  });
+
+  it('tidak mencatat entri dikoreksi bila tidak ada koreksi', () => {
+    const sesi = bangunNilaiSesi(
+      META,
+      [responden('a', { q1: 'Strongly agree' })],
+      SKEMA_CAMPURAN,
+      new Map([['a', new Map([['Esai', 5]])]]),
+    );
+    expect(sesi.dikoreksi.has('a')).toBe(false);
+  });
+
+  it('menunggu butir manual yang belum ada di peta nilai', () => {
+    // Peta yang memuat sebagian butir manual saja adalah keadaan normal di
+    // tengah penilaian. Kunci yang hilang berarti belum dinilai, bukan nol —
+    // kalau nol, nilainya menjadi 40.
+    const duaEsai: Skema = {
+      skemaId: 'dua-esai',
+      perlakuanKosong: 'abaikan',
+      butir: [
+        { kolomAsal: 'E1', label: 'Esai 1', dimensi: 'e', aturan: MANUAL_10, bobot: 1 },
+        { kolomAsal: 'E2', label: 'Esai 2', dimensi: 'e', aturan: MANUAL_10, bobot: 1 },
+      ],
+    };
+    const sesi = bangunNilaiSesi(
+      META,
+      [responden('a', {})],
+      duaEsai,
+      new Map([['a', new Map([['E1', 8]])]]),
+    );
+    expect(sesi.nilai.get('a')).toBe(80);
+    expect(sesi.menunggu.get('a')).toBe(1);
+  });
 });

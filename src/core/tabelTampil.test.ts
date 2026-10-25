@@ -160,8 +160,22 @@ describe('bangunTabelGabungan', () => {
 
 describe('bangunTabelRingkasan', () => {
   const dimensi: HasilIndeksDimensi[] = [
-    { dimensi: 'kemudahan', indeks: 80.996, pasanganDihitung: 100 },
-    { dimensi: 'kepuasan', indeks: null, pasanganDihitung: 0 },
+    {
+      dimensi: 'kemudahan',
+      indeks: 80.996,
+      pasanganDihitung: 100,
+      pasanganMenunggu: 0,
+      bobotDihitung: 1,
+      peringatan: [],
+    },
+    {
+      dimensi: 'kepuasan',
+      indeks: null,
+      pasanganDihitung: 0,
+      pasanganMenunggu: 0,
+      bobotDihitung: 0,
+      peringatan: [],
+    },
   ];
 
   it('memuat kolom dimensi, indeks, kategori, dan jumlah pasangan', () => {
@@ -269,9 +283,20 @@ describe('bentuk tabel dari pembangun sesungguhnya', () => {
     ['gabungan tanpa baris', bangunTabelGabungan(hasil([]), OPSI)],
     [
       'ringkasan dimensi',
-      bangunTabelRingkasan([{ dimensi: 'kemudahan', indeks: 80.996, pasanganDihitung: 100 }], 70, {
-        desimal: 1,
-      }),
+      bangunTabelRingkasan(
+        [
+          {
+            dimensi: 'kemudahan',
+            indeks: 80.996,
+            pasanganDihitung: 100,
+            pasanganMenunggu: 0,
+            bobotDihitung: 1,
+            peringatan: [],
+          },
+        ],
+        70,
+        { desimal: 1 },
+      ),
     ],
   ];
 

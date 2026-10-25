@@ -146,6 +146,8 @@ describe('penggabungan Pre-Test dan Post-Test', () => {
       nilai: new Map([[diPre.id, hitungNilaiResponden(diPre, skema).nilai]]),
       identitas: new Map([[diPre.id, { email: diPre.email, nama: diPre.nama, meta: {} }]]),
       kurang: new Map(),
+      menunggu: new Map(),
+      dikoreksi: new Map(),
       peringatan: new Map(),
       dipadatkan: new Map(),
     };
@@ -156,6 +158,8 @@ describe('penggabungan Pre-Test dan Post-Test', () => {
       nilai: new Map([[diPost.id, hitungNilaiResponden(diPost, skema).nilai]]),
       identitas: new Map([[diPost.id, { email: diPost.email, nama: diPost.nama, meta: {} }]]),
       kurang: new Map(),
+      menunggu: new Map(),
+      dikoreksi: new Map(),
       peringatan: new Map(),
       dipadatkan: new Map(),
     };
@@ -180,6 +184,8 @@ describe('penggabungan Pre-Test dan Post-Test', () => {
       nilai: new Map([[budi.id, 40]]),
       identitas: new Map([[budi.id, { email: budi.email, nama: budi.nama, meta: {} }]]),
       kurang: new Map(),
+      menunggu: new Map(),
+      dikoreksi: new Map(),
       peringatan: new Map(),
       dipadatkan: new Map(),
     };
@@ -196,6 +202,8 @@ describe('penggabungan Pre-Test dan Post-Test', () => {
         [andi.id, { email: andi.email, nama: andi.nama, meta: {} }],
       ]),
       kurang: new Map(),
+      menunggu: new Map(),
+      dikoreksi: new Map(),
       peringatan: new Map(),
       dipadatkan: new Map(),
     };

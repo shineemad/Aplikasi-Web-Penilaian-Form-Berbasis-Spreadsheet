@@ -8,6 +8,14 @@ export interface NilaiSesi {
   identitas: Map<string, { email: string; nama: string | null; meta: Record<string, string> }>;
   /** respondenId -> jumlah kolom kosong. Tidak ada entri berarti lengkap. */
   kurang: Map<string, number>;
+  /**
+   * respondenId -> jumlah butir manual yang penilainya belum mengisi nilai.
+   * Tidak ada entri berarti tidak ada yang menunggu. Dipisahkan dari `kurang`
+   * karena "belum dinilai penilai" bukan "tidak dijawab responden".
+   */
+  menunggu: Map<string, number>;
+  /** respondenId -> kolomAsal butir yang skor otomatisnya ditimpa nilai penilai. */
+  dikoreksi: Map<string, string[]>;
   /** respondenId -> peringatan yang muncul saat menilainya. */
   peringatan: Map<string, string[]>;
   /**

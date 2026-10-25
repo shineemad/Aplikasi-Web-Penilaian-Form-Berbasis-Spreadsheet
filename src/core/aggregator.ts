@@ -29,6 +29,16 @@ export interface HasilIndeksDimensi {
   indeks: number | null;
   /** Jumlah pasangan (responden, butir) yang benar-benar masuk perhitungan. */
   pasanganDihitung: number;
+  /** Jumlah pasangan (responden, butir) yang masih menunggu nilai dari penilai. */
+  pasanganMenunggu: number;
+  /**
+   * Jumlah bobot butir yang menyumbang setidaknya satu pasangan terhitung.
+   * Butir yang masih menunggu tidak ikut, supaya bobotnya tidak menggelembungkan
+   * dimensi ini pada indeks keseluruhan.
+   */
+  bobotDihitung: number;
+  /** Peringatan tingkat dimensi. Pesan yang sama hanya muncul sekali. */
+  peringatan: string[];
 }
 
 /** Hasil pemeriksaan satu nilai manual terhadap rentang butirnya. */
@@ -136,9 +146,19 @@ export function hitungNilaiResponden(
 }
 
 interface Akumulasi {
-  jumlahSkor: number;
-  jumlahMaks: number;
+  /** Jumlah rasio skor/skorMaks, bukan jumlah skor mentah. */
+  jumlahRasio: number;
   pasangan: number;
+  pasanganMenunggu: number;
+  bobotDihitung: number;
+  peringatan: Set<string>;
+}
+
+function manualResponden(
+  nilaiManual: NilaiManualSesi | undefined,
+  respondenId: string,
+): NilaiManualResponden | undefined {
+  return nilaiManual === undefined ? undefined : nilaiManual.get(respondenId);
 }
 
 export function hitungIndeksDimensi(
@@ -146,81 +166,112 @@ export function hitungIndeksDimensi(
   skema: Skema,
   nilaiManual?: NilaiManualSesi,
 ): HasilIndeksDimensi[] {
-  const urutanDimensi: string[] = [];
+  // Map menjaga urutan kemunculan dimensi, jadi tidak perlu daftar terpisah.
   const akumulasi = new Map<string, Akumulasi>();
+
+  const akuDimensi = (dimensi: string): Akumulasi => {
+    const ada = akumulasi.get(dimensi);
+    if (ada !== undefined) return ada;
+    const baru: Akumulasi = {
+      jumlahRasio: 0,
+      pasangan: 0,
+      pasanganMenunggu: 0,
+      bobotDihitung: 0,
+      peringatan: new Set<string>(),
+    };
+    akumulasi.set(dimensi, baru);
+    return baru;
+  };
 
   for (const butir of skema.butir) {
     const skorMaks = skorMaksAturan(butir.aturan);
-    if (skorMaks === null) continue;
+
+    if (skorMaks === null) {
+      // Kolom abaikan tidak punya indeks, tetapi nilai manual yang terlanjur
+      // ditulis untuknya tidak boleh hilang tanpa peringatan.
+      for (const responden of semuaResponden) {
+        const manual = periksaNilaiManual(butir, manualResponden(nilaiManual, responden.id));
+        if (manual.status === 'di luar rentang')
+          akuDimensi(butir.dimensi).peringatan.add(manual.pesan);
+      }
+      continue;
+    }
     if (!Number.isFinite(skorMaks) || skorMaks <= 0) continue;
 
-    if (!akumulasi.has(butir.dimensi)) {
-      urutanDimensi.push(butir.dimensi);
-      akumulasi.set(butir.dimensi, { jumlahSkor: 0, jumlahMaks: 0, pasangan: 0 });
-    }
-    const agg = akumulasi.get(butir.dimensi);
-    if (agg === undefined) continue;
+    const agg = akuDimensi(butir.dimensi);
+    let pasanganButir = 0;
 
     for (const responden of semuaResponden) {
-      const manual = periksaNilaiManual(
-        butir,
-        nilaiManual === undefined ? undefined : nilaiManual.get(responden.id),
-      );
-      if (manual.status === 'di luar rentang') continue;
+      const manual = periksaNilaiManual(butir, manualResponden(nilaiManual, responden.id));
+      if (manual.status === 'di luar rentang') {
+        agg.peringatan.add(manual.pesan);
+        continue;
+      }
       if (manual.status === 'sah') {
-        agg.jumlahSkor += manual.nilai;
-        agg.jumlahMaks += skorMaks;
+        agg.jumlahRasio += manual.nilai / skorMaks;
         agg.pasangan += 1;
+        pasanganButir += 1;
         continue;
       }
 
       const hasil = skorJawaban(responden.jawaban[butir.kolomAsal], butir.aturan);
 
       if (hasil.status === 'terhitung') {
-        agg.jumlahSkor += hasil.skor;
-        agg.jumlahMaks += skorMaks;
+        agg.jumlahRasio += hasil.skor / skorMaks;
         agg.pasangan += 1;
+        pasanganButir += 1;
+        continue;
+      }
+      if (hasil.status === 'butuh-manual') {
+        agg.pasanganMenunggu += 1;
+        continue;
+      }
+      if (hasil.status === 'peringatan') {
+        agg.peringatan.add(`${butir.label}: ${hasil.pesan}`);
         continue;
       }
       if (hasil.status === 'kosong' && skema.perlakuanKosong === 'nol') {
-        agg.jumlahMaks += skorMaks;
         agg.pasangan += 1;
+        pasanganButir += 1;
       }
     }
+
+    if (pasanganButir > 0) agg.bobotDihitung += butir.bobot;
   }
 
-  return urutanDimensi.map((dimensi) => {
-    const agg = akumulasi.get(dimensi);
-    if (agg === undefined || agg.jumlahMaks === 0) {
-      return { dimensi, indeks: null, pasanganDihitung: 0 };
-    }
-    return {
-      dimensi,
-      indeks: (agg.jumlahSkor / agg.jumlahMaks) * 100,
-      pasanganDihitung: agg.pasangan,
-    };
-  });
+  return [...akumulasi].map(([dimensi, agg]) => ({
+    dimensi,
+    // Rasio dirata-ratakan per pasangan, bukan dijumlahkan lalu dibagi jumlah
+    // skor maksimum: kalau tidak, satu esai 0..100 membobot dirinya sendiri jauh
+    // lebih berat daripada belasan butir Likert yang sedimensi dengannya.
+    indeks: agg.pasangan === 0 ? null : (agg.jumlahRasio / agg.pasangan) * 100,
+    pasanganDihitung: agg.pasangan,
+    pasanganMenunggu: agg.pasanganMenunggu,
+    bobotDihitung: agg.bobotDihitung,
+    peringatan: [...agg.peringatan],
+  }));
 }
 
 export function hitungIndeksKeseluruhan(
   hasilDimensi: HasilIndeksDimensi[],
   skema: Skema,
 ): number | null {
-  const bobotDimensi = new Map<string, number>();
+  const dimensiSkema = new Set<string>();
   for (const butir of skema.butir) {
     if (butir.aturan.jenis === 'abaikan') continue;
-    const sekarang = bobotDimensi.get(butir.dimensi);
-    bobotDimensi.set(butir.dimensi, (sekarang === undefined ? 0 : sekarang) + butir.bobot);
+    dimensiSkema.add(butir.dimensi);
   }
 
   let totalBobot = 0;
   let total = 0;
   for (const hasil of hasilDimensi) {
     if (hasil.indeks === null) continue;
-    const bobot = bobotDimensi.get(hasil.dimensi);
-    if (bobot === undefined) continue;
-    totalBobot += bobot;
-    total += bobot * hasil.indeks;
+    if (!dimensiSkema.has(hasil.dimensi)) continue;
+    // Bobot yang dipakai adalah bobot butir yang benar-benar menyumbang, bukan
+    // seluruh bobot dimensi pada skema: butir yang masih menunggu penilaian
+    // jangan sampai menggelembungkan dimensinya.
+    totalBobot += hasil.bobotDihitung;
+    total += hasil.bobotDihitung * hasil.indeks;
   }
 
   return totalBobot === 0 ? null : total / totalBobot;

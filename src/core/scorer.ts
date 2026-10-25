@@ -22,8 +22,10 @@ export function rentangNilaiManual(aturan: Aturan): { min: number; maks: number 
   switch (aturan.jenis) {
     case 'manual':
       return { min: aturan.min, maks: aturan.maks };
+    // Lantainya skor terendah yang bisa dihasilkan petanya, bukan nol: pada
+    // skala 1..5 angka 0 bukan koreksi melainkan kekeliruan.
     case 'peta-opsi':
-      return { min: 0, maks: aturan.skorMaks };
+      return { min: Math.min(...Object.values(aturan.peta)), maks: aturan.skorMaks };
     case 'kunci-jawaban':
       return { min: 0, maks: 1 };
     case 'abaikan':
