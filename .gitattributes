@@ -1,0 +1,10 @@
+# core.autocrlf=true pada mesin ini menulis CRLF ke pohon kerja, sedangkan
+# Prettier disetel endOfLine: "lf". Tanpa berkas ini keduanya saling menimpa:
+# checkout menjadikan CRLF, lalu `npm run format:check` merah tanpa ada yang
+# salah. Akhir baris dikunci LF supaya hasilnya sama di Windows dan Codespaces.
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.xlsx binary
+*.pdf binary
