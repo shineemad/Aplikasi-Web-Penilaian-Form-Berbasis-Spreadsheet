@@ -253,6 +253,128 @@ describe('bacaPenilaian', () => {
     expect(hasil.masalah[0]?.jenis).toBe('kepala');
     expect(hasil.masalah[0]?.pesan).toMatch(/penyiapan ruang kerja/i);
   });
+
+  it('menandai baris tanpa oleh, karena koreksi tanpa penanggung jawab mematikan jejak audit', () => {
+    // Batasan Global 15. Tanpa uji ini, membuang pemeriksaannya tetap hijau.
+    const hasil = bacaPenilaian([
+      KEPALA_PENILAIAN,
+      [1, 'pre', 'r1', 'Esai', 80, '', '', '2026-10-01'],
+    ]);
+
+    expect(hasil.baris).toEqual([]);
+    expect(hasil.masalah).toHaveLength(1);
+    expect(hasil.masalah[0]?.nomorBaris).toBe(2);
+    expect(hasil.masalah[0]?.pesan).toMatch(/oleh/);
+  });
+
+  it('menandai baris tanpa sesi_id, yang tidak dimiliki sesi mana pun', () => {
+    const hasil = bacaPenilaian([
+      KEPALA_PENILAIAN,
+      [1, '', 'r1', 'Esai', 80, '', 'guru@sekolah.id', '2026-10-01'],
+    ]);
+
+    expect(hasil.baris).toEqual([]);
+    expect(hasil.masalah[0]?.pesan).toMatch(/sesi_id/);
+  });
+
+  it('menandai baris tanpa kriteria, yang tidak menunjuk butir mana pun', () => {
+    const hasil = bacaPenilaian([
+      KEPALA_PENILAIAN,
+      [1, 'pre', 'r1', '', 80, '', 'guru@sekolah.id', '2026-10-01'],
+    ]);
+
+    expect(hasil.baris).toEqual([]);
+    expect(hasil.masalah[0]?.pesan).toMatch(/kriteria/);
+  });
+
+  it('menandai penilaian_id yang kosong, karena kosong bukan nomor urut', () => {
+    const hasil = bacaPenilaian([
+      KEPALA_PENILAIAN,
+      ['', 'pre', 'r1', 'Esai', 80, '', 'guru@sekolah.id', '2026-10-01'],
+    ]);
+
+    expect(hasil.baris).toEqual([]);
+    expect(hasil.masalah[0]?.pesan).toMatch(/penilaian_id/);
+  });
+
+  it('membaca nilai yang ditulis sebagai teks "0" sebagai angka nol, bukan kosong', () => {
+    // Kolom berformat teks mengembalikan '0'. Memperlakukannya sebagai kosong
+    // menghapus nilai nol yang memang diberikan penilai.
+    const hasil = bacaPenilaian([
+      KEPALA_PENILAIAN,
+      ['1', 'pre', 'r1', 'Esai', '0', '', 'guru@sekolah.id', '2026-10-01'],
+    ]);
+
+    expect(hasil.masalah).toEqual([]);
+    expect(hasil.baris[0]?.nilai).toBe(0);
+    expect(hasil.baris[0]?.nilai).not.toBeNull();
+  });
+
+  it('menolak Infinity dan 0x10 sebagai nilai, karena Sheets pun bukan Number()', () => {
+    const hasil = bacaPenilaian([
+      KEPALA_PENILAIAN,
+      [1, 'pre', 'r1', 'Esai', 'Infinity', '', 'guru@sekolah.id', '2026-10-01'],
+      [2, 'pre', 'r1', 'Esai', '0x10', '', 'guru@sekolah.id', '2026-10-01'],
+      [3, 'pre', 'r1', 'Esai', Number.POSITIVE_INFINITY, '', 'guru@sekolah.id', '2026-10-01'],
+    ]);
+
+    expect(hasil.baris).toEqual([]);
+    expect(hasil.masalah.map((satu) => satu.nomorBaris)).toEqual([2, 3, 4]);
+  });
+
+  it('menandai penilaian_id kembar dan menyebut baris pasangannya', () => {
+    // C2 mengurutkan nilai berlaku menurut penilaian_id. Dua baris bernomor
+    // sama membuat yang menang ditentukan urutan baris, bukan oleh siapa pun.
+    const hasil = bacaPenilaian([
+      KEPALA_PENILAIAN,
+      [7, 'pre', 'r1', 'Esai', 80, '', 'guru@sekolah.id', '2026-10-01'],
+      [8, 'pre', 'r1', 'Esai', 85, '', 'guru@sekolah.id', '2026-10-02'],
+      [7, 'pre', 'r1', 'Esai', 90, '', 'guru@sekolah.id', '2026-10-03'],
+    ]);
+
+    expect(hasil.baris.map((satu) => satu.penilaianId)).toEqual([8]);
+    expect(hasil.masalah.map((satu) => satu.nomorBaris)).toEqual([2, 4]);
+    expect(hasil.masalah[0]?.jenis).toBe('baris');
+    expect(hasil.masalah[0]?.pesan).toMatch(/baris 4/);
+    expect(hasil.masalah[1]?.pesan).toMatch(/baris 2/);
+  });
+
+  it('menganggap penilaian_id bertipe teks dan angka sebagai nomor yang sama', () => {
+    const hasil = bacaPenilaian([
+      KEPALA_PENILAIAN,
+      [7, 'pre', 'r1', 'Esai', 80, '', 'guru@sekolah.id', '2026-10-01'],
+      ['7', 'pre', 'r1', 'Esai', 90, '', 'guru@sekolah.id', '2026-10-02'],
+    ]);
+
+    expect(hasil.baris).toEqual([]);
+    expect(hasil.masalah).toHaveLength(2);
+  });
+
+  it('menandai responden_id yang sudah dipaksa Sheets menjadi angka', () => {
+    // Hash 16 heksadesimal selalu teks. Sel yang kembali sebagai angka berarti
+    // nol di depannya sudah hilang dan digit belakangnya sudah dibulatkan.
+    const hasil = bacaPenilaian([
+      KEPALA_PENILAIAN,
+      [1, 'pre', 9999999999999999, 'Esai', 80, '', 'guru@sekolah.id', '2026-10-01'],
+      [2, 'pre', Number.POSITIVE_INFINITY, 'Esai', 80, '', 'guru@sekolah.id', '2026-10-01'],
+    ]);
+
+    expect(hasil.baris).toEqual([]);
+    expect(hasil.masalah).toHaveLength(2);
+    expect(hasil.masalah[0]?.pesan).toMatch(/responden_id/);
+    expect(hasil.masalah[0]?.pesan).toMatch(/apostrof/);
+    expect(hasil.masalah[1]?.pesan).toMatch(/Infinity/);
+  });
+
+  it('tidak mengeluhkan responden_id berupa hash yang benar-benar teks', () => {
+    const hasil = bacaPenilaian([
+      KEPALA_PENILAIAN,
+      [1, 'pre', '0012345678901234', 'Esai', 80, '', 'guru@sekolah.id', '2026-10-01'],
+    ]);
+
+    expect(hasil.masalah).toEqual([]);
+    expect(hasil.baris[0]?.respondenId).toBe('0012345678901234');
+  });
 });
 
 describe('bacaSesi', () => {
@@ -364,6 +486,35 @@ describe('bacaSesi', () => {
 
     expect(terbalik.baris).toEqual(urut.baris);
   });
+
+  it('menandai sesi_id kembar, seperti cariSesi_ di Kode.gs menyebutnya SESI_CACAT', () => {
+    // Satu final dan satu berjalan: memilih salah satunya menentukan apakah
+    // sesi itu masih boleh ditulisi, dan pilihannya hanya urutan baris.
+    const hasil = bacaSesi([
+      KEPALA_SESI,
+      ['pre', 'p1', 'Pre-Test', 's1', 'indeks', 'final', 'a@x.id', 'b@x.id'],
+      ['pre', 'p1', 'Pre-Test', 's1', 'indeks', 'berjalan', 'a@x.id', 'b@x.id'],
+    ]);
+
+    expect(hasil.baris).toEqual([]);
+    expect(hasil.masalah.map((satu) => satu.nomorBaris)).toEqual([2, 3]);
+    expect(hasil.masalah[0]?.jenis).toBe('baris');
+    expect(hasil.masalah[0]?.pesan).toMatch(/sesi_id/);
+    expect(hasil.masalah[0]?.pesan).toMatch(/baris 3/);
+  });
+
+  it('tidak menganggap sesi_id beda huruf besar-kecil sebagai kembar', () => {
+    // Kepekaan hurufnya belum diputuskan (Tugas 5 Langkah 3); menyeragamkannya
+    // di pendeteksi kembar berarti memutuskannya diam-diam.
+    const hasil = bacaSesi([
+      KEPALA_SESI,
+      ['pre', 'p1', 'Pre-Test', 's1', 'indeks', 'berjalan', 'a@x.id', 'b@x.id'],
+      ['PRE', 'p1', 'Pre-Test', 's1', 'indeks', 'berjalan', 'a@x.id', 'b@x.id'],
+    ]);
+
+    expect(hasil.masalah).toEqual([]);
+    expect(hasil.baris.map((satu) => satu.sesiId)).toEqual(['pre', 'PRE']);
+  });
 });
 
 describe('bacaProyek', () => {
@@ -416,6 +567,18 @@ describe('bacaProyek', () => {
     ]);
 
     expect(hasil.baris[0]?.dibuatPada).toBe('2026-01-02T00:00:00.000Z');
+  });
+
+  it('menandai proyek_id kembar, karena urutan sesinya lalu tidak tentu', () => {
+    const hasil = bacaProyek([
+      KEPALA_PROYEK,
+      ['p1', 'Literasi 2026', 'pre, post', 'pre', 'post', '2026-01-02'],
+      ['p1', 'Literasi 2026', 'post', 'post', '', '2026-01-03'],
+    ]);
+
+    expect(hasil.baris).toEqual([]);
+    expect(hasil.masalah.map((satu) => satu.nomorBaris)).toEqual([2, 3]);
+    expect(hasil.masalah[0]?.pesan).toMatch(/proyek_id/);
   });
 });
 
@@ -605,6 +768,99 @@ describe('bacaResponden', () => {
 
     const responden: RespondenSesi[] = hasil.baris;
     expect(responden[0]?.jawaban).toEqual({ Q1: 'Agree' });
+  });
+
+  it('menandai baris tanpa sesi_id maupun tanpa email', () => {
+    const hasil = bacaResponden([
+      KEPALA_RESPONDEN,
+      ['', 'r1', 'budi@sekolah.id', 'Budi', 'lengkap', '2026-01-02'],
+      ['pre', 'r2', '', 'Siti', 'lengkap', '2026-01-02'],
+    ]);
+
+    expect(hasil.baris).toEqual([]);
+    expect(hasil.masalah.map((satu) => satu.nomorBaris)).toEqual([2, 3]);
+    expect(hasil.masalah[0]?.pesan).toMatch(/sesi_id/);
+    expect(hasil.masalah[1]?.pesan).toMatch(/email/);
+  });
+
+  it('menolak kurang:0 tetapi menerima LENGKAP berhuruf besar', () => {
+    // §6.1 menuntut N minimal 1: "kurang 0 butir" adalah lengkap yang ditulis
+    // dengan cara yang menyesatkan, bukan keadaan tersendiri.
+    const nol = bacaResponden([
+      KEPALA_RESPONDEN,
+      ['pre', 'r1', 'budi@sekolah.id', 'Budi', 'kurang:0', '2026-01-02'],
+    ]);
+    expect(nol.baris).toEqual([]);
+    expect(nol.masalah[0]?.pesan).toMatch(/status_kelengkapan/);
+
+    const besar = bacaResponden([
+      KEPALA_RESPONDEN,
+      ['pre', 'r1', 'budi@sekolah.id', 'Budi', 'LENGKAP', '2026-01-02'],
+    ]);
+    expect(besar.masalah).toEqual([]);
+    expect(besar.baris[0]?.kelengkapan).toEqual({ status: 'lengkap' });
+  });
+
+  it('memangkas sisa nama setelah awalan, bukan hanya awalannya', () => {
+    const hasil = bacaResponden([
+      [...KEPALA_RESPONDEN, 'jawaban_  Q1', 'meta_\tUmur '],
+      ['pre', 'r1', 'budi@sekolah.id', 'Budi', 'lengkap', '2026-01-02', 'Agree', '20'],
+    ]);
+
+    expect(hasil.masalah).toEqual([]);
+    expect(hasil.baris[0]?.jawaban).toEqual({ Q1: 'Agree' });
+    expect(hasil.baris[0]?.meta).toEqual({ Umur: '20' });
+  });
+
+  it('menandai id yang sudah dipaksa Sheets menjadi angka', () => {
+    const hasil = bacaResponden([
+      KEPALA_RESPONDEN,
+      ['pre', 12345678901234, 'budi@sekolah.id', 'Budi', 'lengkap', '2026-01-02'],
+    ]);
+
+    expect(hasil.baris).toEqual([]);
+    expect(hasil.masalah).toHaveLength(1);
+    expect(hasil.masalah[0]?.jenis).toBe('baris');
+    expect(hasil.masalah[0]?.pesan).toMatch(/apostrof/);
+  });
+
+  it('memperingatkan kolom tanpa awalan, yang jawabannya hilang tanpa jejak', () => {
+    // Respons Form yang ditempel apa adanya: kepalanya "Q1 Saya puas", bukan
+    // "jawaban_Q1 Saya puas". Tanpa peringatan ini `jawaban` menjadi {} dan
+    // dengan perlakuan_kosong "nol" seluruh nilai menjadi 0.
+    const hasil = bacaResponden([
+      [...KEPALA_RESPONDEN, 'Q1 Saya puas', 'Timestamp'],
+      ['pre', 'r1', 'budi@sekolah.id', 'Budi', 'lengkap', '2026-01-02', 'Agree', '2026-01-01'],
+    ]);
+
+    expect(hasil.baris).toHaveLength(1);
+    expect(hasil.baris[0]?.jawaban).toEqual({});
+    expect(hasil.masalah).toHaveLength(1);
+    expect(hasil.masalah[0]?.nomorBaris).toBe(1);
+    expect(hasil.masalah[0]?.jenis).toBe('peringatan');
+    expect(hasil.masalah[0]?.pesan).toMatch(/"Q1 Saya puas", "Timestamp"/);
+  });
+
+  it('tidak memperingatkan kolom tetap §6.1 sebagai kolom tanpa awalan', () => {
+    const hasil = bacaResponden([
+      [...KEPALA_RESPONDEN, 'jawaban_Q1'],
+      ['pre', 'r1', 'budi@sekolah.id', 'Budi', 'lengkap', '2026-01-02', 'Agree'],
+    ]);
+
+    expect(hasil.masalah).toEqual([]);
+  });
+
+  it('tidak menandai id responden yang kembar, karena sesi.ts sudah menandainya', () => {
+    // `dipadatkan` di core melaporkannya beserta jumlah barisnya; menandainya
+    // di sini juga berarti admin memperbaiki keluhan yang sama di dua tempat.
+    const hasil = bacaResponden([
+      KEPALA_RESPONDEN,
+      ['pre', 'r1', 'budi@sekolah.id', 'Budi', 'lengkap', '2026-01-02'],
+      ['pre', 'r1', 'budi@sekolah.id', 'Budi', 'lengkap', '2026-01-03'],
+    ]);
+
+    expect(hasil.masalah).toEqual([]);
+    expect(hasil.baris).toHaveLength(2);
   });
 });
 

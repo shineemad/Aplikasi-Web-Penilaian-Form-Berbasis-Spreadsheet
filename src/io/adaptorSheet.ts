@@ -153,8 +153,40 @@ const KOLOM_SKEMA = [
 const AWALAN_JAWABAN = 'jawaban_';
 const AWALAN_META = 'meta_';
 
+/**
+ * Kolom yang membuat satu baris dapat dibedakan dari baris lain pada sheet yang
+ * sama, beserta akibat bila dua baris memakai nilai yang sama.
+ *
+ * `Responden` sengaja tidak punya kunci di sini: `sesi.ts` sudah menandai id
+ * responden yang kembar lewat `dipadatkan`, dan menandainya dua kali membuat
+ * admin memperbaiki keluhan yang sama di dua tempat.
+ */
+interface KunciBaris {
+  nama: string;
+  akibat: string;
+}
+
+const KUNCI_PENILAIAN: KunciBaris = {
+  nama: 'penilaian_id',
+  akibat:
+    'urutan total yang menentukan nilai mana yang berlaku terakhir (§6.3) runtuh, sehingga ' +
+    'koreksi yang mana pun bisa menang',
+};
+
+const KUNCI_SESI: KunciBaris = {
+  nama: 'sesi_id',
+  akibat:
+    'backend menolak seluruh sesi itu (SESI_CACAT) sementara rekap di sini tetap bisa membaca ' +
+    'baris yang statusnya berbeda',
+};
+
+const KUNCI_PROYEK: KunciBaris = {
+  nama: 'proyek_id',
+  akibat: 'tabel gabungan tidak tahu urutan sesi mana yang berlaku bagi proyek itu',
+};
+
 export function bacaPenilaian(kisi: unknown[][]): HasilAdaptor<BarisPenilaian> {
-  return bacaSheet(kisi, 'Penilaian', KOLOM_PENILAIAN, (ambil) => {
+  return bacaSheet(kisi, 'Penilaian', KOLOM_PENILAIAN, KUNCI_PENILAIAN, (ambil) => {
     const penilaianId = angkaSel(ambil('penilaian_id'));
     if (penilaianId === null || penilaianId === BUKAN_ANGKA) {
       return tolak(
@@ -171,7 +203,12 @@ export function bacaPenilaian(kisi: unknown[][]): HasilAdaptor<BarisPenilaian> {
       return tolak(keluhanKosong('sesi_id', 'sehingga baris ini tidak dimiliki sesi mana pun.'));
     }
 
-    const respondenId = rapikan(ambil('responden_id'));
+    const selResponden = ambil('responden_id');
+    if (typeof selResponden === 'number') {
+      return tolak(keluhanIdentitasAngka('responden_id', selResponden));
+    }
+
+    const respondenId = rapikan(selResponden);
     if (respondenId === '') {
       return tolak(
         keluhanKosong('responden_id', 'sehingga nilainya tidak bisa dikaitkan dengan siapa pun.'),
@@ -222,7 +259,7 @@ export function bacaPenilaian(kisi: unknown[][]): HasilAdaptor<BarisPenilaian> {
 }
 
 export function bacaSesi(kisi: unknown[][]): HasilAdaptor<BarisSesi> {
-  return bacaSheet(kisi, 'Sesi', KOLOM_SESI, (ambil) => {
+  return bacaSheet(kisi, 'Sesi', KOLOM_SESI, KUNCI_SESI, (ambil) => {
     // Huruf besar-kecil pada sesi_id sengaja dipertahankan: perilakunya belum
     // diputuskan, dan menyeragamkannya di sini memutuskannya diam-diam.
     const sesiId = rapikan(ambil('sesi_id'));
@@ -281,7 +318,7 @@ export function bacaSesi(kisi: unknown[][]): HasilAdaptor<BarisSesi> {
 }
 
 export function bacaProyek(kisi: unknown[][]): HasilAdaptor<BarisProyek> {
-  return bacaSheet(kisi, 'Proyek', KOLOM_PROYEK, (ambil) => {
+  return bacaSheet(kisi, 'Proyek', KOLOM_PROYEK, KUNCI_PROYEK, (ambil) => {
     const proyekId = rapikan(ambil('proyek_id'));
     if (proyekId === '') {
       return tolak(keluhanKosong('proyek_id', 'sehingga proyek ini tidak punya pengenal.'));
@@ -304,47 +341,66 @@ export function bacaResponden(kisi: unknown[][]): HasilAdaptor<BarisResponden> {
   const dinamis = pindaiKolomDinamis(kisi[0]);
   if (dinamis.masalah !== null) return { baris: [], masalah: [dinamis.masalah] };
 
-  return bacaSheet(kisi, 'Responden', KOLOM_RESPONDEN, (ambil, _nomorBaris, isi) => {
-    const sesiId = rapikan(ambil('sesi_id'));
-    if (sesiId === '') {
-      return tolak(keluhanKosong('sesi_id', 'sehingga baris ini tidak dimiliki sesi mana pun.'));
-    }
+  const hasil = bacaSheet<BarisResponden>(
+    kisi,
+    'Responden',
+    KOLOM_RESPONDEN,
+    null,
+    (ambil, _nomorBaris, isi) => {
+      const sesiId = rapikan(ambil('sesi_id'));
+      if (sesiId === '') {
+        return tolak(keluhanKosong('sesi_id', 'sehingga baris ini tidak dimiliki sesi mana pun.'));
+      }
 
-    const id = rapikan(ambil('id'));
-    if (id === '') {
-      return tolak(
-        keluhanKosong('id', 'sehingga nilai responden ini tidak bisa dicocokkan dengan siapa pun.'),
-      );
-    }
+      const selId = ambil('id');
+      if (typeof selId === 'number') return tolak(keluhanIdentitasAngka('id', selId));
 
-    const email = rapikanKecil(ambil('email'));
-    if (email === '') {
-      return tolak(keluhanKosong('email', 'padahal email adalah kunci identitas responden.'));
-    }
+      const id = rapikan(selId);
+      if (id === '') {
+        return tolak(
+          keluhanKosong(
+            'id',
+            'sehingga nilai responden ini tidak bisa dicocokkan dengan siapa pun.',
+          ),
+        );
+      }
 
-    const kelengkapan = bacaKelengkapan(ambil('status_kelengkapan'));
-    if (kelengkapan === null) {
-      return tolak(
-        keluhanTipe(
-          'status_kelengkapan',
-          ambil('status_kelengkapan'),
-          'spec §6.1 hanya mengenal lengkap, kosong, dan kurang:N dengan N minimal 1',
-        ),
-      );
-    }
+      const email = rapikanKecil(ambil('email'));
+      if (email === '') {
+        return tolak(keluhanKosong('email', 'padahal email adalah kunci identitas responden.'));
+      }
 
-    const nama = pangkas(ambil('nama'));
-    return terima<BarisResponden>({
-      sesiId,
-      id,
-      email,
-      nama: nama === '' ? null : nama,
-      kelengkapan,
-      diimporPada: pangkas(ambil('diimpor_pada')),
-      jawaban: petikKolomDinamis(dinamis.jawaban, isi),
-      meta: petikKolomDinamis(dinamis.meta, isi),
-    });
-  });
+      const kelengkapan = bacaKelengkapan(ambil('status_kelengkapan'));
+      if (kelengkapan === null) {
+        return tolak(
+          keluhanTipe(
+            'status_kelengkapan',
+            ambil('status_kelengkapan'),
+            'spec §6.1 hanya mengenal lengkap, kosong, dan kurang:N dengan N minimal 1',
+          ),
+        );
+      }
+
+      const nama = pangkas(ambil('nama'));
+      return terima<BarisResponden>({
+        sesiId,
+        id,
+        email,
+        nama: nama === '' ? null : nama,
+        kelengkapan,
+        diimporPada: pangkas(ambil('diimpor_pada')),
+        jawaban: petikKolomDinamis(dinamis.jawaban, isi),
+        meta: petikKolomDinamis(dinamis.meta, isi),
+      });
+    },
+  );
+
+  // Kepala yang ditolak sudah menjelaskan bahwa tak satu baris pun dibaca;
+  // menambahkan keluhan kolom di atasnya hanya menenggelamkan pesan itu.
+  if (dinamis.peringatan !== null && !hasil.masalah.some((satu) => satu.jenis === 'kepala')) {
+    hasil.masalah.unshift(dinamis.peringatan);
+  }
+  return hasil;
 }
 
 /**
@@ -604,7 +660,8 @@ function peringatanSkorMaksCacat(isi: BarisSkemaMentah, skemaId: string): Masala
 }
 
 function bacaSkemaMentah(kisi: unknown[][]): HasilAdaptor<SatuBarisSkema> {
-  return bacaSheet(kisi, 'Skema', KOLOM_SKEMA, (ambil, nomorBaris) => {
+  // Tanpa kunci: satu `skema_id` memang menempati beberapa baris, satu per butir.
+  return bacaSheet(kisi, 'Skema', KOLOM_SKEMA, null, (ambil, nomorBaris) => {
     // Dibaca paling dulu: baris yang tidak diketahui miliknya skema mana tidak
     // bisa menjatuhkan skema mana pun, jadi ia hanya bisa dilaporkan sendirian.
     const skemaId = rapikan(ambil('skema_id'));
@@ -895,11 +952,13 @@ function pindaiKolomDinamis(barisKepala: unknown[] | undefined): {
   jawaban: Map<string, number>;
   meta: Map<string, number>;
   masalah: MasalahBaris | null;
+  peringatan: MasalahBaris | null;
 } {
   const jawaban = new Map<string, number>();
   const meta = new Map<string, number>();
+  const asing: string[] = [];
   // Sheet kosong dibiarkan untuk `bacaKepala`, yang pesannya sudah mengajari.
-  if (barisKepala === undefined) return { jawaban, meta, masalah: null };
+  if (barisKepala === undefined) return { jawaban, meta, masalah: null, peringatan: null };
 
   for (let i = 0; i < barisKepala.length; i += 1) {
     const asli = pangkas(barisKepala[i]);
@@ -913,13 +972,19 @@ function pindaiKolomDinamis(barisKepala: unknown[] | undefined): {
     } else if (kecil.startsWith(AWALAN_META)) {
       peta = meta;
       awalan = AWALAN_META;
-    } else continue;
+    } else {
+      // Kolom tetap §6.1 memang tidak berawalan; sisanya tidak akan pernah
+      // cocok dengan satu pun `kolom_asal`, dan diamnya itu yang berbahaya.
+      if (asli !== '' && !KOLOM_RESPONDEN.includes(normalisasiTeks(asli))) asing.push(asli);
+      continue;
+    }
 
     const nama = asli.slice(awalan.length).trim();
     if (nama === '') {
       return {
         jawaban,
         meta,
+        peringatan: null,
         masalah: masalahKepala(
           `Sheet Responden punya kolom "${asli}" yang tidak menyebut nama pertanyaannya. ` +
             'Isinya tidak akan pernah cocok dengan satu pun `kolom_asal` di Skema, sehingga ' +
@@ -934,6 +999,7 @@ function pindaiKolomDinamis(barisKepala: unknown[] | undefined): {
       return {
         jawaban,
         meta,
+        peringatan: null,
         masalah: masalahKepala(
           `Sheet Responden punya dua kolom "${awalan}${nama}" — kolom ke-${bentrok + 1} dan ` +
             `kolom ke-${i + 1}. Salah satunya akan menimpa yang lain tanpa ada yang tahu jawaban ` +
@@ -946,7 +1012,33 @@ function pindaiKolomDinamis(barisKepala: unknown[] | undefined): {
     peta.set(nama, i);
   }
 
-  return { jawaban, meta, masalah: null };
+  return {
+    jawaban,
+    meta,
+    masalah: null,
+    peringatan: asing.length === 0 ? null : peringatanKolomAsing(asing),
+  };
+}
+
+/**
+ * Respons Form yang ditempel apa adanya tidak berawalan sama sekali, sehingga
+ * `jawaban` menjadi `{}` dan setiap butir terbaca kosong. Dengan
+ * `perlakuan_kosong: 'nol'` seluruh nilai lalu menjadi 0 — angka yang tampak
+ * wajar padahal tidak ada satu jawaban pun yang dibaca.
+ */
+function peringatanKolomAsing(nama: string[]): MasalahBaris {
+  const daftar = nama.map((satu) => `"${satu}"`).join(', ');
+  return {
+    nomorBaris: 1,
+    jenis: 'peringatan',
+    pesan:
+      `Sheet Responden punya kolom yang bukan kolom tetap §6.1 dan tidak berawalan ` +
+      `"${AWALAN_JAWABAN}" maupun "${AWALAN_META}": ${daftar}. Isinya tidak dibaca sebagai ` +
+      'jawaban, sehingga setiap butir Skema yang menunjuk kolom itu terhitung kosong — dan ' +
+      'dengan perlakuan_kosong "nol" seluruh nilainya menjadi 0 tanpa satu angka pun tampak ' +
+      `ganjil. Beri awalan "${AWALAN_JAWABAN}" pada kolom pertanyaan dan "${AWALAN_META}" pada ` +
+      'kolom keterangan lainnya.',
+  };
 }
 
 /**
@@ -969,10 +1061,16 @@ function bacaSheet<T>(
   kisi: unknown[][],
   namaSheet: string,
   kolomWajib: string[],
+  kunci: KunciBaris | null,
   bangun: (ambil: AmbilSel, nomorBaris: number, isi: unknown[]) => Terjemahan<T>,
 ): HasilAdaptor<T> {
   const kepala = bacaKepala(kisi, namaSheet, kolomWajib);
   if (kepala.masalah !== null) return { baris: [], masalah: [kepala.masalah] };
+
+  const kembar =
+    kunci === null
+      ? new Map<number, string>()
+      : keluhanKunciKembar(kisi, kepala.peta, namaSheet, kunci);
 
   const baris: T[] = [];
   const masalah: MasalahBaris[] = [];
@@ -982,17 +1080,84 @@ function bacaSheet<T>(
     // Baris sisa di bawah tabel; Sheets tetap mengembalikannya sebagai sel ''.
     if (isi === undefined || barisKosong(isi)) continue;
 
+    const nomorBaris = i + 1;
+    const bentrok = kembar.get(nomorBaris);
+    if (bentrok !== undefined) {
+      masalah.push({ nomorBaris, jenis: 'baris', pesan: bentrok });
+      continue;
+    }
+
     const ambil: AmbilSel = (nama) => {
       const kolom = kepala.peta.get(nama);
       return kolom === undefined ? '' : isi[kolom];
     };
 
-    const hasil = bangun(ambil, i + 1, isi);
+    const hasil = bangun(ambil, nomorBaris, isi);
     if (hasil.ok) baris.push(hasil.baris);
-    else masalah.push({ nomorBaris: i + 1, jenis: 'baris', pesan: hasil.pesan });
+    else masalah.push({ nomorBaris, jenis: 'baris', pesan: hasil.pesan });
   }
 
   return { baris, masalah };
+}
+
+/**
+ * Nomor baris yang kuncinya dipakai baris lain juga, dipetakan ke keluhannya.
+ *
+ * Dua baris berkunci sama tidak bisa dibedakan satu sama lain, sehingga yang
+ * terpakai ditentukan urutan baris — bukan oleh siapa pun. `Kode.gs` sudah
+ * menolak seluruh sheet `Sesi` yang begitu (`SESI_CACAT`); membiarkan rekap
+ * tetap membacanya berarti dua lapisan yang sama memutuskan hal berbeda atas
+ * sheet yang sama. **Semua** barisnya dijatuhkan, bukan salah satunya:
+ * memilih satu di sini adalah tebakan yang persis ingin dihindari.
+ */
+function keluhanKunciKembar(
+  kisi: unknown[][],
+  peta: Map<string, number>,
+  namaSheet: string,
+  kunci: KunciBaris,
+): Map<number, string> {
+  const hasil = new Map<number, string>();
+  const kolom = peta.get(kunci.nama);
+  if (kolom === undefined) return hasil;
+
+  const perNilai = new Map<string, number[]>();
+  for (let i = 1; i < kisi.length; i += 1) {
+    const isi = kisi[i];
+    if (isi === undefined || barisKosong(isi)) continue;
+
+    // Huruf besar-kecil sengaja dipertahankan: kepekaannya belum diputuskan,
+    // dan menyeragamkannya di sini memutuskannya diam-diam.
+    const nilai = rapikan(isi[kolom]);
+    // Kunci kosong sudah dikeluhkan penerjemah barisnya dengan kalimat yang
+    // lebih tepat; menyebutnya "kembar" hanya menggandakan keluhan itu.
+    if (nilai === '') continue;
+
+    const sudah = perNilai.get(nilai);
+    if (sudah === undefined) perNilai.set(nilai, [i + 1]);
+    else sudah.push(i + 1);
+  }
+
+  for (const [nilai, nomor] of perNilai) {
+    if (nomor.length < 2) continue;
+    for (const satu of nomor) {
+      const pasangan = nomor.filter((lain) => lain !== satu);
+      hasil.set(
+        satu,
+        `Kolom "${kunci.nama}" sheet ${namaSheet} berisi "${nilai}" di baris ${satu} dan juga ` +
+          `di ${sebutBaris(pasangan)}. Pengenal yang kembar membuat baris-baris itu tidak bisa ` +
+          `dibedakan, sehingga ${kunci.akibat}. Tak satu pun di antaranya dibaca, karena memilih ` +
+          'salah satunya berarti hasilnya ditentukan urutan baris. Beri pengenal berbeda pada ' +
+          'salah satunya di Spreadsheet.',
+      );
+    }
+  }
+  return hasil;
+}
+
+function sebutBaris(nomor: number[]): string {
+  if (nomor.length === 1) return `baris ${nomor[0]}`;
+  const awal = nomor.slice(0, -1).join(', ');
+  return `baris ${awal} dan ${nomor[nomor.length - 1]}`;
 }
 
 /**
@@ -1067,11 +1232,16 @@ function masalahKepala(pesan: string): MasalahBaris {
  */
 function petunjukKolomBaru(nama: string): string {
   if (nama !== 'perlakuan_kosong') return '';
+  // `bangunRuangKerja_` melewati sheet yang sudah berisi data dan hanya
+  // melaporkan kolom yang kurang; menjanjikan ia menambahkan kolomnya akan
+  // membuat admin menunggu sesuatu yang tidak pernah terjadi.
   return (
     ' Kolom itu baru ditambahkan (koreksi D6), jadi ruang kerja yang disiapkan sebelumnya ' +
-    'memang belum memilikinya. Jalankan penyiapan ruang kerja sekali lagi — ia melengkapi ' +
-    'kepala kolom tanpa menghapus baris yang sudah ada — lalu isi selnya dengan "abaikan" ' +
-    'atau "nol" di setiap baris.'
+    'memang belum memilikinya. Jalankan penyiapan ruang kerja sekali lagi untuk memastikan ' +
+    'kolom mana saja yang kurang — tetapi sheet yang sudah berisi data tidak disentuhnya, ' +
+    'jadi tambahkan sendiri kolom "perlakuan_kosong" di baris pertama, lalu isi setiap ' +
+    'barisnya dengan "abaikan" (jawaban kosong dikeluarkan dari rata-rata) atau "nol" ' +
+    '(dihitung sebagai nol).'
   );
 }
 
@@ -1095,6 +1265,26 @@ function keluhanTipe(kolom: string, sel: unknown, diharapkan: string): string {
   return (
     `Kolom "${kolom}" berisi ${isi === '' ? 'sel kosong' : `"${isi}"`}, padahal ${diharapkan}. ` +
     'Baris ini tidak ikut dibaca sampai selnya diperbaiki di Spreadsheet.'
+  );
+}
+
+/**
+ * Pengenal responden adalah hash 16 heksadesimal, dan hash yang benar **selalu**
+ * tersimpan sebagai teks. Sel yang kembali sebagai angka karena itu adalah
+ * bukti Sheets sudah memaksanya, dan pemaksaan itu tidak bisa dibalik:
+ * `9999999999999999` terbaca `10000000000000000`, `12e4567890123456` menjadi
+ * `Infinity`, dan nol di depan hilang. `Kode.gs` menulis kolom ini berawalan
+ * apostrof justru untuk mencegahnya; sheet yang diisi tangan tidak punya
+ * apostrof itu, dan tanpa keluhan ini kerusakannya hanya tampak sebagai
+ * responden yang "tidak ada".
+ */
+function keluhanIdentitasAngka(kolom: string, sel: number): string {
+  return (
+    `Kolom "${kolom}" berisi angka ${String(sel)}, padahal pengenal responden selalu teks. ` +
+    'Sheets memaksa sel yang tampak seperti angka menjadi angka, sehingga nol di depan hilang ' +
+    'dan digit di belakang dibulatkan. Yang terbaca di sini sudah bukan pengenal yang ditulis, ' +
+    'dan mencocokkannya akan menunjuk orang yang keliru. Tulis ulang selnya dengan apostrof di ' +
+    "depan ('0012…) di Spreadsheet; apostrofnya sendiri tidak ikut tersimpan."
   );
 }
 
