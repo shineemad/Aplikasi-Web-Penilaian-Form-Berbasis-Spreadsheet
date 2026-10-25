@@ -369,8 +369,11 @@ Mutasi K9 (pencocokan `sesi_id` tanpa peduli huruf besar-kecil) lolos seluruh su
 
 Pakai gaya catatan koreksi §5.2/§6.1.
 - **§7.1** — aturan `manual`: butir tanpa nilai ditandai sebagai menunggu, dikeluarkan dari pembilang dan penyebut, jumlahnya dilaporkan (D1). Nilai di luar `min`/`maks` menghasilkan peringatan, tidak dijepit (D3).
+- **§7.1, bentuk `parameter` untuk `peta-opsi`** — contoh spec berupa peta datar, yang tidak punya tempat untuk `skorMaks`. Karena D8 menetapkan `parameter` sebagai sumber kebenaran dan `usulAturan.ts` menolak menurunkan `skorMaks` dari data, bentuk yang dipakai adalah `{"peta":{…},"skorMaks":5}`. Sebutkan juga bahwa `kunci-jawaban` memakai medan **`benar`** di sheet sedangkan tipe core memakai `kunci` — beda nama itu membuat `JSON.stringify(aturan)` membatalkan seluruh skema saat dibaca kembali, dan `tulisParameter` ada justru untuk itu.
 - **§6.3** — baris `Penilaian` untuk kolom non-`manual` berlaku sebagai koreksi yang menimpa skor otomatis, dan koreksinya tercatat (D2).
-- **§8.1 dan §8.2** — penyebut: butir menunggu dikeluarkan, dan responden yang punya butir menunggu wajib dapat dikenali.
+- **§6.2** — kolom `perlakuan_kosong` (D6) dan kedudukan `skor_maks` sebagai bacaan manusia saja (D8).
+- **§6.1** — bentuk kolom `jawaban_*` dan `meta_*` (D7).
+- **§8.1 dan §8.2** — penyebut: butir menunggu dikeluarkan, dan responden yang punya butir menunggu wajib dapat dikenali. Indeks merata-ratakan rasio per pasangan, dan bobot dimensi hanya dari butir yang benar-benar menyumbang pasangan (D5).
 
 - [ ] **Langkah 5: Commit**
 
@@ -396,7 +399,7 @@ Jalankan perintahnya, lihat keluarannya, baru menyatakan beres.
 | --- | --- |
 | **Impor menulis `Responden` dan `Skema` ke sheet** | Belum ada aksi `simpanResponden`, `ubahSkema`, `ubahBobot`, maupun `buatSesi`. Tanpa itu, rekap hanya bisa membaca sheet yang diisi tangan — jalur bacanya terbukti, isinya belum. Ini rencana berikutnya yang paling masuk akal |
 | **Dua kewajiban D7 ditegakkan saat impor** | Header yang memuat baris baru wajib **ditolak** (ia memecah kepala kolom di sheet), dan dua header yang **bentrok setelah dipangkas** wajib ditolak dengan menyebut keduanya. Keduanya tidak bisa ditegakkan saat membaca: pada saat itu kerusakannya sudah tertulis di sheet. Adaptor hanya dapat menolak kolom `jawaban_*`/`meta_*` yang kembar atau tak bernama — penjaga terakhir, bukan pengganti |
-| **`parameter` untuk `peta-opsi` menuntut suntingan §7.1** | D8 menetapkan `parameter` sebagai sumber kebenaran, tetapi contoh §7.1 berupa peta datar yang tidak punya tempat untuk `skorMaks` — padahal `usulAturan.ts` menolak menurunkannya dari data. Adaptor membaca `{"peta":{…},"skorMaks":5}`; §7.1 perlu menyusul |
+| **`parameter` untuk `peta-opsi` menuntut suntingan §7.1** | **Dipindahkan ke Tugas 5 Langkah 4** — Tugas 5 memang sudah menyunting §7.1, jadi membiarkannya di sini berarti ia terlewat |
 | **C3 — hosting** | Memblokir Rencana UI, bukan rencana ini |
 | **C4 dan C6 — mode deployment dan wewenang penyiapan** | Menunggu protokol keamanan dijalankan dengan akun kedua |
 | **C7 — pemeriksaan isi penilaian di server** | D3 memindahkan validasi rentang ke core, sehingga C7 kini hanya menyisakan pemeriksaan keberadaan `respondenId` dan `kriteria` |
