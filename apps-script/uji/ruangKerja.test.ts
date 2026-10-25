@@ -31,7 +31,11 @@ import { muatKode } from './sandbox';
 
 const LIMA_SHEET = ['Penilaian', 'Proyek', 'Responden', 'Sesi', 'Skema'];
 
-/** Persis spec §6.1–§6.5. Salah eja satu nama membuat seluruh sistem salah kolom. */
+/**
+ * Persis spec §6.1–§6.5, ditambah satu kolom yang lahir dari koreksi D6 rencana
+ * "Rekap dan Nilai Manual": `perlakuan_kosong` pada Skema. Salah eja satu nama
+ * membuat seluruh sistem salah kolom.
+ */
 const KEPALA_MENURUT_SPEC: Record<string, string[]> = {
   Proyek: ['proyek_id', 'nama', 'sesi_urut', 'sesi_awal', 'sesi_akhir', 'dibuat_pada'],
   Sesi: ['sesi_id', 'proyek_id', 'nama', 'skema_id', 'mode', 'status', 'penilai', 'admin'],
@@ -45,6 +49,7 @@ const KEPALA_MENURUT_SPEC: Record<string, string[]> = {
     'parameter',
     'skor_maks',
     'bobot',
+    'perlakuan_kosong',
   ],
   Penilaian: [
     'penilaian_id',
@@ -221,7 +226,7 @@ describe('penyiapan bersifat idempoten', () => {
         ],
         Skema: [
           KEPALA_MENURUT_SPEC.Skema as unknown[],
-          ['SK1', 'q1', 'Butir 1', 'Dimensi A', 'likert', '', 4, 1],
+          ['SK1', 'q1', 'Butir 1', 'Dimensi A', 'likert', '', 4, 1, 'abaikan'],
         ],
         Penilaian: [
           KEPALA_MENURUT_SPEC.Penilaian as unknown[],

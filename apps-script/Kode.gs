@@ -72,6 +72,12 @@ var KOLOM_PENILAIAN_WAJIB = [
  * namanya baru diketahui saat berkas diimpor; penyiapan hanya menyediakan
  * kolom tetapnya. Kolom `pengamat` juga tidak ada: §6.4 belum punya kolom itu,
  * dan menambahkannya sendiri berarti memutuskan koreksi C5 diam-diam.
+ *
+ * `perlakuan_kosong` pada Skema melampaui kedelapan kolom §6.2 (koreksi D6).
+ * §7.2 butir 3 menuntut admin memilih antara mengeluarkan jawaban kosong dari
+ * rata-rata atau menghitungnya nol, tetapi tak satu pun kolom spec menyimpan
+ * pilihan itu — sehingga skema yang tersimpan di sheet tidak pernah bisa
+ * dibaca kembali menjadi `Skema` yang utuh.
  */
 var KEPALA_RUANG_KERJA = [
   {
@@ -97,6 +103,7 @@ var KEPALA_RUANG_KERJA = [
       'parameter',
       'skor_maks',
       'bobot',
+      'perlakuan_kosong',
     ],
   },
   { nama: NAMA_SHEET_PENILAIAN, kepala: KOLOM_PENILAIAN_WAJIB },
