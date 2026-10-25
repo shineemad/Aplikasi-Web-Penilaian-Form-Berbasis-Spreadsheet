@@ -102,6 +102,39 @@ Menerjemahkannya secara harfiah menjadi $\sum s / \sum s^{\max}$ membobot tiap p
 
 Turunannya pada indeks keseluruhan: bobot sebuah dimensi adalah jumlah bobot butir yang **benar-benar menyumbang pasangan**, bukan seluruh bobot butirnya pada `Skema`. Memakai bobot skema membuat butir yang masih menunggu penilaian menggelembungkan dimensinya — bentuk cermin dari bug penyebut yang rencana ini perbaiki, dan butir menunggu adalah keadaan normal selama penilaian berjalan.
 
+### D6 — `perlakuanKosong` disimpan sebagai kolom pada sheet `Skema`
+
+§6.2 memberi delapan kolom, tak satu pun untuk perlakuan jawaban kosong. Tetapi tipe `Skema` di core mewajibkan `perlakuanKosong`, dan §7.2 butir 3 melarang skema difinalkan sebelum admin memutuskannya. Keputusannya ada dan ditegakkan, tetapi tidak punya tempat disimpan — sehingga `bacaSkema` tidak bisa menghasilkan `Skema` sama sekali.
+
+**Keputusan:** tambah kolom `perlakuan_kosong` pada sheet `Skema`.
+
+Menyimpannya di sheet `Sesi` **ditolak**: skema yang sama dipakai Pre-Test dan Post-Test akan bisa diperlakukan berbeda, sehingga kolom `selisih` salah tanpa satu pun peringatan — dua instrumen identik dinilai dengan aturan berbeda lalu dibandingkan. Menyelipkannya ke dalam `parameter` juga ditolak karena menyembunyikan keputusan yang justru harus terlihat (Batasan 23).
+
+Harga dari pilihan ini: nilainya **terulang** di setiap baris milik satu `skema_id`, sehingga dua baris bisa berselisih. Karena itu adaptor **wajib menandai perselisihan**, bukan mengambil baris pertama. Mengambil yang pertama berarti separuh skema dinilai dengan aturan yang tidak pernah dipilih siapa pun.
+
+### D7 — `jawaban_*` dan `meta_*` memakai header asli, hanya dipangkas spasi tepinya
+
+§6.1 hanya menulis "satu kolom per pertanyaan", tanpa menyatakan bentuk namanya. Header nyata memuat spasi ganda, tanda tanya, dan kalimat panjang. Bila bentuknya ditebak dan tebakannya meleset, pencocokan kembali ke `kolom_asal` gagal **diam-diam** — jawaban hilang dari perhitungan tanpa jejak, kelas cacat yang sudah dua kali menggigit proyek ini.
+
+**Keputusan:** `jawaban_` + header asli yang dipangkas spasi tepinya. Sama untuk `meta_`.
+
+Alasannya satu hal saja: pembalikannya **fungsi identitas** — buang awalan, selesai. Slug tidak bisa dibalik sehingga pemetaannya harus ikut disimpan, dan nomor urut patah setiap kali urutan `Skema` berubah.
+
+Dua kewajiban yang lahir dari pilihan ini, dan keduanya harus ditegakkan **saat impor**, bukan saat membaca:
+
+- header yang memuat baris baru **ditolak** — ia akan memecah kepala kolom di sheet
+- dua header yang **bentrok setelah dipangkas** ditolak, dengan menyebut keduanya
+
+Pencocokan kembali ke `kolom_asal` memakai pangkas spasi tepi saja — sejalan dengan importer dan dengan `Kode.gs`, yang keduanya sudah memakai aturan itu.
+
+### D8 — `skor_maks` pada sheet `Skema` hanya tampilan; `parameter` yang berwenang
+
+§6.2 memberi setiap baris sebuah `skor_maks`, tetapi tipe `Aturan` hanya menyimpannya untuk `peta-opsi`. Untuk `kunci-jawaban` nilainya tersirat 1, untuk `abaikan` tidak berarti, dan untuk `manual` ia **menggandakan** `maks` di dalam `parameter` — dua tempat yang bisa berselisih.
+
+**Keputusan:** `parameter` adalah sumber kebenaran; `skor_maks` dipertahankan sebagai kolom bacaan manusia.
+
+Kolomnya tidak dihapus karena admin memang memeriksa sheet dengan mata, dan skor maksimum adalah hal pertama yang dicari saat mencurigai sebuah angka. Tetapi karena ia tidak berwenang, adaptor **wajib menandai** bila isinya berselisih dengan yang diturunkan `skorMaksAturan`. Nilai yang berselisih dan didiamkan lebih buruk daripada kolom yang tidak ada: ia membuat pembaca yakin pada angka yang tidak dipakai menghitung apa pun.
+
 ---
 
 ## Struktur Berkas
