@@ -1,6 +1,7 @@
 import type { Kelengkapan } from '../core/kelengkapan';
 import { normalisasiTeks } from '../core/normalisasi';
 import type { BarisPenilaian } from '../core/penilaian';
+import { periksaSkema, type MasalahSkema, type PeringatanSkema } from '../core/periksaSkema';
 import { skorMaksAturan } from '../core/scorer';
 import type { RespondenSesi } from '../core/sesi';
 import type { Aturan, ButirSkema, PerlakuanKosong, Skema } from '../core/tipe';
@@ -27,6 +28,12 @@ export interface MasalahBaris {
    */
   jenis: 'kepala' | 'baris' | 'peringatan';
   pesan: string;
+  /**
+   * Terisi untuk sheet `Skema` saja. Tanpanya, pembaca masalah harus mengurai
+   * teks pesan untuk membedakan "skema itu batal" dari "skema itu tidak ada" —
+   * dua keadaan yang menuntut tindakan berbeda.
+   */
+  skemaId?: string;
 }
 
 /** Baris cacat ditandai, bukan dibuang (Batasan Global 24). */
@@ -87,7 +94,10 @@ interface BarisSkemaMentah {
   jenisAturan: Aturan['jenis'];
   /** Hasil `JSON.parse`; `null` bila selnya kosong. */
   parameter: unknown;
+  /** `null` bila selnya kosong **atau** isinya bukan angka — lihat `skorMaksCacat`. */
   skorMaks: number | null;
+  /** Isi sel apa adanya bila ia bukan angka; `null` bila selnya terbaca atau kosong. */
+  skorMaksCacat: string | null;
   bobot: number;
   /** Apa adanya dari sel, dinormalkan; `''` berarti admin belum memutuskan. */
   perlakuanKosong: string;
@@ -340,10 +350,17 @@ export function bacaResponden(kisi: unknown[][]): HasilAdaptor<BarisResponden> {
 /**
  * Satu `Skema` per `skema_id`, dalam urutan kemunculannya di sheet.
  *
- * Skema hanya dihasilkan bila **seluruh** barisnya terbaca dan `perlakuan_kosong`
- * seluruh barisnya sepakat. Menghasilkan skema yang sebagian butirnya hilang
- * berarti rata-rata terbobot dihitung atas separuh instrumen lalu dicetak
- * sebagai nilai responden — persis cacat yang rencana ini perbaiki.
+ * Skema hanya dihasilkan bila **seluruh** barisnya terbaca, `perlakuan_kosong`
+ * seluruh barisnya sepakat, dan `periksaSkema` di core tidak menemukan masalah.
+ * Menghasilkan skema yang sebagian butirnya hilang berarti rata-rata terbobot
+ * dihitung atas separuh instrumen lalu dicetak sebagai nilai responden — persis
+ * cacat yang rencana ini perbaiki.
+ *
+ * `periksaSkema` dipanggil dari sini karena sheet yang diisi tangan adalah
+ * satu-satunya jalan menuju `Skema` hari ini: tanpa panggilan ini, peta yang
+ * opsinya bernilai 7 pada skala 0..5 akan menghasilkan nilai 140 tanpa satu pun
+ * peringatan, dan bobot negatif menghasilkan `null` yang tampak seperti data
+ * yang belum masuk.
  */
 export function bacaSkema(kisi: unknown[][]): HasilAdaptor<Skema> {
   const mentah = bacaSkemaMentah(kisi);
@@ -361,21 +378,32 @@ export function bacaSkema(kisi: unknown[][]): HasilAdaptor<Skema> {
 
   const baris: Skema[] = [];
   for (const [skemaId, kelompok] of perSkema) {
-    let utuh = true;
+    const menjatuhkan = new Set<number>();
     const butir: ButirSkema[] = [];
+    const barisButir = new Map<string, number>();
     const kolomTerlihat = new Map<string, number>();
 
     for (const satu of kelompok) {
       if (!satu.utuh) {
-        masalah.push({ nomorBaris: satu.isi.nomorBaris, jenis: 'baris', pesan: satu.isi.pesan });
-        utuh = false;
+        masalah.push({
+          nomorBaris: satu.isi.nomorBaris,
+          jenis: 'baris',
+          skemaId,
+          pesan: satu.isi.pesan,
+        });
+        menjatuhkan.add(satu.isi.nomorBaris);
         continue;
       }
 
       const tafsir = tafsirkanAturan(satu.isi.jenisAturan, satu.isi.parameter);
       if (!tafsir.ok) {
-        masalah.push({ nomorBaris: satu.isi.nomorBaris, jenis: 'baris', pesan: tafsir.pesan });
-        utuh = false;
+        masalah.push({
+          nomorBaris: satu.isi.nomorBaris,
+          jenis: 'baris',
+          skemaId,
+          pesan: tafsir.pesan,
+        });
+        menjatuhkan.add(satu.isi.nomorBaris);
         continue;
       }
 
@@ -385,6 +413,7 @@ export function bacaSkema(kisi: unknown[][]): HasilAdaptor<Skema> {
         masalah.push({
           nomorBaris: satu.isi.nomorBaris,
           jenis: 'peringatan',
+          skemaId,
           pesan:
             `Kolom asal "${satu.isi.kolomAsal}" sudah dipakai baris ${bentrok} pada skema ` +
             `"${skemaId}". Keduanya tetap dihitung, sehingga kolom itu menyumbang bobot dua kali ` +
@@ -392,9 +421,18 @@ export function bacaSkema(kisi: unknown[][]): HasilAdaptor<Skema> {
         });
       }
 
-      const peringatanSkorMaks = bandingkanSkorMaks(satu.isi, tafsir.aturan);
-      if (peringatanSkorMaks !== null) masalah.push(peringatanSkorMaks);
+      // `skor_maks` hanya bacaan manusia (D8), jadi sel yang tak terbaca tidak
+      // boleh menjatuhkan barisnya — tetapi juga tidak boleh dibandingkan.
+      if (satu.isi.skorMaksCacat !== null) {
+        masalah.push(peringatanSkorMaksCacat(satu.isi, skemaId));
+      } else {
+        const peringatanSkorMaks = bandingkanSkorMaks(satu.isi, tafsir.aturan);
+        if (peringatanSkorMaks !== null) masalah.push({ ...peringatanSkorMaks, skemaId });
+      }
 
+      if (!barisButir.has(satu.isi.kolomAsal)) {
+        barisButir.set(satu.isi.kolomAsal, satu.isi.nomorBaris);
+      }
       butir.push({
         kolomAsal: satu.isi.kolomAsal,
         label: satu.isi.label,
@@ -406,16 +444,163 @@ export function bacaSkema(kisi: unknown[][]): HasilAdaptor<Skema> {
 
     const putusan = putuskanPerlakuanKosong(skemaId, kelompok);
     if (putusan !== null && !putusan.ok) {
-      masalah.push(putusan.masalah);
-      utuh = false;
+      masalah.push({ ...putusan.masalah, skemaId });
+      menjatuhkan.add(putusan.masalah.nomorBaris);
     }
 
-    if (utuh && putusan !== null && putusan.ok) {
-      baris.push({ skemaId, butir, perlakuanKosong: putusan.nilai });
+    if (putusan === null || !putusan.ok) {
+      if (menjatuhkan.size > 0) masalah.push(ringkasSkemaBatal(skemaId, kelompok, menjatuhkan));
+      continue;
     }
+
+    // Baris boleh terbaca satu per satu dan tetap menghasilkan skema yang
+    // mustahil; hanya core yang tahu kombinasi mana yang menghasilkan angka
+    // yang salah, jadi keputusannya diambil di sana.
+    const calon: Skema = { skemaId, butir, perlakuanKosong: putusan.nilai };
+    const periksa = periksaSkema(calon, []);
+
+    for (const satu of periksa.masalah) {
+      const nomorBaris = barisMasalahSkema(barisButir, satu.kolomAsal, kelompok);
+      masalah.push({
+        nomorBaris,
+        jenis: 'baris',
+        skemaId,
+        pesan: pesanMasalahSkema(satu, skemaId),
+      });
+      menjatuhkan.add(nomorBaris);
+    }
+    for (const satu of periksa.peringatan) {
+      masalah.push({
+        nomorBaris: barisMasalahSkema(barisButir, satu.kolomAsal, kelompok),
+        jenis: 'peringatan',
+        skemaId,
+        pesan: pesanPeringatanSkema(satu),
+      });
+    }
+
+    if (menjatuhkan.size > 0) {
+      masalah.push(ringkasSkemaBatal(skemaId, kelompok, menjatuhkan));
+      continue;
+    }
+    baris.push(calon);
   }
 
   return { baris, masalah };
+}
+
+/**
+ * Satu kalimat per skema yang batal, supaya "skema ini tidak dihasilkan" tidak
+ * harus disimpulkan dari beberapa pesan per baris yang masing-masing hanya
+ * mengaku membuang satu baris. Baris yang sah pun ikut hilang, dan tanpa
+ * kalimat ini kehilangan itu tidak punya pesan sama sekali.
+ */
+function ringkasSkemaBatal(
+  skemaId: string,
+  kelompok: SatuBarisSkema[],
+  menjatuhkan: Set<number>,
+): MasalahBaris {
+  const nomor = kelompok.map((satu) => satu.isi.nomorBaris);
+  const awal = Math.min(...nomor);
+  const akhir = Math.max(...nomor);
+  const rentang = awal === akhir ? `baris ${awal}` : `baris ${awal}–${akhir}`;
+  const penyebab = [...menjatuhkan].sort((a, b) => a - b).join(', ');
+
+  return {
+    nomorBaris: awal,
+    jenis: 'baris',
+    skemaId,
+    pesan:
+      `Skema "${skemaId}" (${rentang}) tidak dihasilkan karena baris ${penyebab}. ` +
+      'Seluruh butirnya ikut tidak terpakai, termasuk baris yang sendirinya tidak bermasalah: ' +
+      'menghitung rata-rata terbobot atas separuh instrumen menghasilkan angka yang tampak ' +
+      'wajar padahal salah. Perbaiki baris yang disebut di Spreadsheet.',
+  };
+}
+
+/** Butir yang kolomnya tidak terlacak tetap harus menunjuk baris yang ada. */
+function barisMasalahSkema(
+  barisButir: Map<string, number>,
+  kolomAsal: string,
+  kelompok: SatuBarisSkema[],
+): number {
+  const nomor = barisButir.get(kolomAsal);
+  if (nomor !== undefined) return nomor;
+  return Math.min(...kelompok.map((satu) => satu.isi.nomorBaris));
+}
+
+function pesanMasalahSkema(masalah: MasalahSkema, skemaId: string): string {
+  const butir = `butir "${masalah.label}" (kolom "${masalah.kolomAsal}")`;
+  const penutup =
+    `Seluruh skema "${skemaId}" tidak dipakai menghitung sampai selnya diperbaiki di ` +
+    'Spreadsheet.';
+
+  switch (masalah.jenis) {
+    case 'skor-peta-melampaui-maks': {
+      const daftar = masalah.opsi.map((satu) => `"${satu.teks}" bernilai ${satu.skor}`).join(', ');
+      return (
+        `Peta skala ${butir} memuat opsi yang melampaui skor maksimum ${masalah.skorMaks}: ` +
+        `${daftar}. Jawaban itu menghasilkan lebih dari 100 persen, sehingga nilai responden ` +
+        `bisa melewati 100 tanpa satu angka pun tampak ganjil. Naikkan "skorMaks" di parameter ` +
+        `atau turunkan nilai opsinya. ${penutup}`
+      );
+    }
+    case 'skor-maks-tidak-sah':
+      return (
+        `Skor maksimum ${butir} bernilai ${sebutAngka(masalah.skorMaks)}, padahal ia menjadi ` +
+        `penyebut setiap jawaban. Isi "skorMaks" (atau "maks") di parameter dengan angka di ` +
+        `atas nol. ${penutup}`
+      );
+    case 'bobot-tidak-positif':
+      return (
+        `Kolom "bobot" ${butir} bernilai ${masalah.bobot}, padahal bobot adalah pengali ` +
+        'sumbangan butir ini terhadap nilai akhir. Nol membuat butirnya tidak berarti apa-apa ' +
+        `dan nilai negatif membuat jawaban yang baik menurunkan nilai. ${penutup}`
+      );
+    case 'kunci-peta-kembar':
+      return (
+        `Peta skala ${butir} memuat ${masalah.kunciAsli.map((satu) => `"${satu}"`).join(' dan ')}, ` +
+        `yang menjadi "${masalah.ternormalisasi}" yang sama setelah dinormalisasi. Hanya satu ` +
+        `yang akan terpakai dan tidak ada yang tahu yang mana. ${penutup}`
+      );
+    case 'kolom-tidak-ada':
+      return `Tidak ada kolom jawaban bernama "${masalah.kolomAsal}" untuk ${butir}. ${penutup}`;
+    case 'opsi-tak-dikenal': {
+      const daftar = masalah.opsi.map((satu) => `"${satu.teks}"`).join(', ');
+      return `Ada jawaban yang tidak ada di peta skala ${butir}: ${daftar}. ${penutup}`;
+    }
+  }
+}
+
+function pesanPeringatanSkema(peringatan: PeringatanSkema): string {
+  return (
+    `Opsi tertinggi pada peta skala butir "${peringatan.label}" (kolom "${peringatan.kolomAsal}") ` +
+    `bernilai ${peringatan.tertinggi}, sementara skor maksimumnya ${peringatan.skorMaks}. ` +
+    'Skala yang sengaja tidak penuh itu sah dan skemanya tetap dipakai, tetapi tidak ada ' +
+    'responden yang bisa mencapai nilai penuh pada butir ini. Periksa apakah ada opsi yang ' +
+    'belum dimasukkan ke peta.'
+  );
+}
+
+function sebutAngka(angka: number | null): string {
+  return angka === null ? 'kosong' : String(angka);
+}
+
+/**
+ * `skor_maks` tidak dipakai menghitung apa pun (D8), jadi sel yang berisi "-",
+ * "n/a", atau sebuah centang tidak boleh menghapus butirnya. Yang hilang hanya
+ * bacaan manusianya, dan itulah yang dikeluhkan di sini.
+ */
+function peringatanSkorMaksCacat(isi: BarisSkemaMentah, skemaId: string): MasalahBaris {
+  return {
+    nomorBaris: isi.nomorBaris,
+    jenis: 'peringatan',
+    skemaId,
+    pesan:
+      `Kolom "skor_maks" untuk "${isi.kolomAsal}" berisi "${isi.skorMaksCacat}", yang bukan ` +
+      'angka. Perhitungan memakai "parameter", jadi butir ini tetap dipakai — tetapi siapa pun ' +
+      'yang memeriksa sheet dengan mata kehilangan angka pembanding yang paling pertama dicari. ' +
+      'Isi selnya dengan angka, atau kosongkan sama sekali.',
+  };
 }
 
 function bacaSkemaMentah(kisi: unknown[][]): HasilAdaptor<SatuBarisSkema> {
@@ -464,10 +649,13 @@ function bacaSkemaMentah(kisi: unknown[][]): HasilAdaptor<SatuBarisSkema> {
       }
     }
 
-    const skorMaks = angkaSel(ambil('skor_maks'));
-    if (skorMaks === BUKAN_ANGKA) {
-      return cacat(keluhanTipe('skor_maks', ambil('skor_maks'), 'kolom itu harus berupa angka'));
-    }
+    // D8 menetapkan kolom ini hanya bacaan manusia, jadi isinya tidak boleh
+    // menjatuhkan barisnya: "-", "n/a", dan centang `false` adalah isi yang
+    // wajar pada sheet yang diisi tangan, dan menghapus butirnya karena itu
+    // berarti separuh instrumen hilang demi sebuah kolom yang tidak berwenang.
+    const terbaca = angkaSel(ambil('skor_maks'));
+    const skorMaksCacat = terbaca === BUKAN_ANGKA ? pangkas(ambil('skor_maks')) : null;
+    const skorMaks = terbaca === BUKAN_ANGKA ? null : terbaca;
 
     const bobot = angkaSel(ambil('bobot'));
     if (bobot === null || bobot === BUKAN_ANGKA) {
@@ -491,6 +679,7 @@ function bacaSkemaMentah(kisi: unknown[][]): HasilAdaptor<SatuBarisSkema> {
         jenisAturan,
         parameter,
         skorMaks,
+        skorMaksCacat,
         bobot,
         perlakuanKosong: rapikanKecil(ambil('perlakuan_kosong')),
       },
@@ -666,7 +855,8 @@ function putuskanPerlakuanKosong(
           `Kolom "perlakuan_kosong" skema "${skemaId}" masih kosong. Jawaban kosong boleh ` +
           'dikeluarkan dari rata-rata ("abaikan") atau dihitung sebagai nol ("nol"); keduanya sah ' +
           'dan menghasilkan angka yang berbeda, sehingga §7.2 butir 3 menuntut admin memilihnya. ' +
-          'Skema ini tidak dipakai menghitung sampai pilihannya ditulis.',
+          'Kolomnya sendiri baru ditambahkan (koreksi D6), jadi baris yang ditulis sebelum itu ' +
+          'memang kosong. Skema ini tidak dipakai menghitung sampai pilihannya ditulis.',
       },
     };
   }
@@ -846,7 +1036,7 @@ function bacaKepala(
         masalah: masalahKepala(
           `Sheet ${namaSheet} tidak punya kolom "${nama}". Menebak kolomnya berarti nilai dibaca ` +
             'dari kolom yang keliru tanpa ada yang tahu, jadi tidak ada satu baris pun yang dibaca. ' +
-            'Perbaiki baris pertama sheet itu lebih dulu.',
+            `Perbaiki baris pertama sheet itu lebih dulu.${petunjukKolomBaru(nama)}`,
         ),
       };
     }
@@ -868,6 +1058,21 @@ function bacaKepala(
 
 function masalahKepala(pesan: string): MasalahBaris {
   return { nomorBaris: 1, jenis: 'kepala', pesan };
+}
+
+/**
+ * Ruang kerja yang disiapkan sebelum koreksi D6 tidak punya `perlakuan_kosong`
+ * sama sekali. Tanpa kalimat ini, admin membaca "tidak punya kolom" sebagai
+ * sheet yang rusak dan mencari kesalahan yang tidak pernah ia buat.
+ */
+function petunjukKolomBaru(nama: string): string {
+  if (nama !== 'perlakuan_kosong') return '';
+  return (
+    ' Kolom itu baru ditambahkan (koreksi D6), jadi ruang kerja yang disiapkan sebelumnya ' +
+    'memang belum memilikinya. Jalankan penyiapan ruang kerja sekali lagi — ia melengkapi ' +
+    'kepala kolom tanpa menghapus baris yang sudah ada — lalu isi selnya dengan "abaikan" ' +
+    'atau "nol" di setiap baris.'
+  );
 }
 
 function terima<T>(baris: T): Terjemahan<T> {

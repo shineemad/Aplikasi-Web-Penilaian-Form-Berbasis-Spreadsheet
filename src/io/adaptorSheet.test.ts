@@ -685,11 +685,12 @@ describe('bacaSkema', () => {
     ]);
 
     expect(hasil.baris).toEqual([]);
-    expect(hasil.masalah).toHaveLength(1);
+    expect(hasil.masalah).toHaveLength(2);
     expect(hasil.masalah[0]?.nomorBaris).toBe(3);
     expect(hasil.masalah[0]?.pesan).toMatch(/abaikan/);
     expect(hasil.masalah[0]?.pesan).toMatch(/nol/);
     expect(hasil.masalah[0]?.pesan).toMatch(/baris 2/);
+    expect(hasil.masalah[1]?.pesan).toMatch(/Skema "s1" \(baris 2–3\) tidak dihasilkan/);
   });
 
   it('menandai perlakuan_kosong yang masih kosong, karena §7.2 butir 3 menuntut keputusan', () => {
@@ -770,13 +771,23 @@ describe('bacaSkema', () => {
   it('tidak menganggap skor_maks yang kosong sebagai perselisihan', () => {
     const hasil = bacaSkema([
       KEPALA_SKEMA,
-      ['s1', 'Q1', 'Q1', 'd', 'peta-opsi', '{"peta":{"agree":4},"skorMaks":5}', '', 1, 'nol'],
+      [
+        's1',
+        'Q1',
+        'Q1',
+        'd',
+        'peta-opsi',
+        '{"peta":{"agree":4,"strongly agree":5},"skorMaks":5}',
+        '',
+        1,
+        'nol',
+      ],
     ]);
 
     expect(hasil.masalah).toEqual([]);
     expect(hasil.baris[0]?.butir[0]?.aturan).toEqual({
       jenis: 'peta-opsi',
-      peta: { agree: 4 },
+      peta: { agree: 4, 'strongly agree': 5 },
       skorMaks: 5,
     });
   });
@@ -803,7 +814,9 @@ describe('bacaSkema', () => {
     ]);
 
     expect(hasil.baris).toEqual([]);
-    expect(hasil.masalah.map((satu) => satu.nomorBaris)).toEqual([2, 3, 4]);
+    // Tiga baris cacat, lalu satu ringkasan setingkat skema di baris pertamanya.
+    expect(hasil.masalah.map((satu) => satu.nomorBaris)).toEqual([2, 3, 4, 2]);
+    expect(hasil.masalah[3]?.pesan).toMatch(/tidak dihasilkan karena baris 2, 3, 4/);
   });
 
   it('menandai parameter yang bentuknya milik aturan lain', () => {
@@ -927,7 +940,7 @@ describe('bacaSkema', () => {
         'Kepuasan',
         'd',
         'peta-opsi',
-        '{"peta":{"agree":4},"skorMaks":5}',
+        '{"peta":{"agree":4,"strongly agree":5},"skorMaks":5}',
         '5',
         '0.5',
         'nol',
@@ -959,7 +972,8 @@ describe('bacaSkema', () => {
     ]);
 
     expect(hasil.baris.map((satu) => satu.skemaId)).toEqual(['utuh']);
-    expect(hasil.masalah).toHaveLength(1);
+    expect(hasil.masalah).toHaveLength(2);
+    expect(hasil.masalah.every((satu) => satu.skemaId === 'rusak')).toBe(true);
   });
 
   it('menandai baris yang skema_id-nya kosong tanpa menjatuhkan skema mana pun', () => {
