@@ -67,6 +67,44 @@ const KEPALA_PENILAIAN: unknown[] = [
 ];
 
 /**
+ * Sejak `bacaRekap` dibangun, ruang kerja palsu di berkas ini harus memuat
+ * kelima sheet seperti yang dibuat penyiapan — bukan hanya dua yang dipakai
+ * kebijakan izin. Sheet yang hilang membuat pembacaan ditolak sebelum izinnya
+ * sempat terbukti meloloskannya, sehingga uji peran akan hijau karena alasan
+ * yang keliru. Isinya sengaja hanya kepala kolom: yang diuji di sini peran,
+ * bukan isi rekapnya (lihat `rekap.test.ts`).
+ */
+const KEPALA_RESPONDEN: unknown[] = [
+  'sesi_id',
+  'id',
+  'email',
+  'nama',
+  'status_kelengkapan',
+  'diimpor_pada',
+];
+
+const KEPALA_SKEMA: unknown[] = [
+  'skema_id',
+  'kolom_asal',
+  'label',
+  'dimensi',
+  'aturan',
+  'parameter',
+  'skor_maks',
+  'bobot',
+  'perlakuan_kosong',
+];
+
+function isiRuangKerja(kisiSesi: unknown[][]): Record<string, unknown[][]> {
+  return {
+    Sesi: kisiSesi,
+    Responden: [KEPALA_RESPONDEN],
+    Skema: [KEPALA_SKEMA],
+    Penilaian: [KEPALA_PENILAIAN],
+  };
+}
+
+/**
  * Daftar penilai bawaan sengaja berhuruf besar dan berspasi tepi. Aturan 4 repo
  * menuntut email dinormalisasi sebelum dicocokkan; tanpa fixture yang janggal,
  * implementasi yang membandingkan mentah-mentah akan tetap hijau.
@@ -124,10 +162,7 @@ function kirim(opsi: {
   ss: SpreadsheetPalsu;
   lockService: LockServicePalsu;
 } {
-  const ss =
-    opsi.ss === undefined
-      ? buatSpreadsheetPalsu({ Sesi: opsi.kisiSesi, Penilaian: [KEPALA_PENILAIAN] })
-      : opsi.ss;
+  const ss = opsi.ss === undefined ? buatSpreadsheetPalsu(isiRuangKerja(opsi.kisiSesi)) : opsi.ss;
   const lockService = opsi.lockService === undefined ? buatLockServicePalsu() : opsi.lockService;
   const konteks = muatKode({
     Session: buatSessionPalsu(opsi.email),
@@ -191,10 +226,7 @@ function statusSesi(ss: SpreadsheetPalsu, sesiId: string): unknown {
 
 /** Ruang kerja utuh yang bisa dipakai ulang beberapa permintaan berturut-turut. */
 function buatRuangKerjaSesi(): SpreadsheetPalsu {
-  return buatSpreadsheetPalsu({
-    Sesi: kisiDari([SESI_BAWAAN]),
-    Penilaian: [KEPALA_PENILAIAN],
-  });
+  return buatSpreadsheetPalsu(isiRuangKerja(kisiDari([SESI_BAWAAN])));
 }
 
 /** Menulis langsung ke sel sheet Sesi, meniru admin yang menyunting lewat Google Sheets. */
@@ -299,10 +331,11 @@ describe('izin yang lolos bukan berarti aksi terjadi', () => {
   it('menolak aksi yang belum dibangun alih-alih menjawab sukses', () => {
     // Store membuang perintah dari antrean begitu melihat ok:true (Batasan
     // Global 18). Selama handler-nya belum ada, ok:true berarti perintahnya
-    // hilang diam-diam. `simpanPenilaian` sudah dibangun di Tugas 3, jadi yang
-    // dipakai di sini adalah aksi yang memang masih kosong — penjaganya tetap
+    // hilang diam-diam. `simpanPenilaian` dibangun di Tugas 3 rencana
+    // sebelumnya dan `bacaRekap` pada Tugas 3 rencana ini, jadi yang dipakai
+    // di sini adalah aksi yang memang masih kosong — penjaganya tetap
     // dibutuhkan selama masih ada aksi yang belum punya penanganan.
-    const { balasan } = panggil({ email: 'admin@kampus.id', aksi: 'bacaRekap' });
+    const { balasan } = panggil({ email: 'admin@kampus.id', aksi: 'ubahSkema' });
     expect(balasan.ok).toBe(false);
     expect(balasan.kode).toBe('AKSI_BELUM_DIBANGUN');
     expect(balasan.pesan).toMatch(/belum/i);
@@ -356,7 +389,7 @@ describe('bentuk permintaan yang tidak sah ditolak sebelum apa pun ditimbang', (
   it('tetap menerima sesiId berspasi tepi, karena itu teks yang sah', () => {
     const { balasan } = panggil({
       email: 'admin@kampus.id',
-      aksi: 'bacaRekap',
+      aksi: 'ubahSkema',
       sesiIdDikirim: ' S1 ',
     });
     expect(balasan.kode).toBe('AKSI_BELUM_DIBANGUN');
@@ -536,7 +569,8 @@ describe('cakupan penolakan sesi final', () => {
       aksi: 'bacaRekap',
       sesi: { status: 'final' },
     });
-    expect(balasan.kode).toBe('AKSI_BELUM_DIBANGUN');
+    expect(balasan.ok).toBe(true);
+    expect(balasan.kode).toBe('REKAP');
   });
 
   it('menolak ubah skema pada sesi final walau pemanggilnya admin', () => {
@@ -608,7 +642,8 @@ describe('status sesi memakai daftar izin, bukan daftar larangan', () => {
       aksi: 'bacaRekap',
       sesi: { status: 'Selesai' },
     });
-    expect(balasan.kode).toBe('AKSI_BELUM_DIBANGUN');
+    expect(balasan.ok).toBe(true);
+    expect(balasan.kode).toBe('REKAP');
   });
 });
 
@@ -626,7 +661,8 @@ describe('tabel peran §9.1 diterjemahkan apa adanya', () => {
 
   it('mengizinkan penilai membaca rekap', () => {
     const { balasan } = panggil({ email: 'penilai@kampus.id', aksi: 'bacaRekap' });
-    expect(balasan.kode).toBe('AKSI_BELUM_DIBANGUN');
+    expect(balasan.ok).toBe(true);
+    expect(balasan.kode).toBe('REKAP');
   });
 
   it('mengenali orang yang terdaftar di dua daftar sekaligus sebagai admin', () => {
@@ -907,7 +943,8 @@ describe('sesi final menolak seluruh penulisan berikutnya', () => {
     // Sesi yang selesai justru yang paling sering dilaporkan.
     const { ss } = panggil({ email: 'admin@kampus.id', aksi: 'finalkanSesi' });
     const { balasan } = panggil({ email: 'penilai@kampus.id', aksi: 'bacaRekap', ss });
-    expect(balasan.kode).toBe('AKSI_BELUM_DIBANGUN');
+    expect(balasan.ok).toBe(true);
+    expect(balasan.kode).toBe('REKAP');
   });
 });
 

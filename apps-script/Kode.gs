@@ -41,9 +41,25 @@ var AKSI_PENYIAPAN = 'siapkanRuangKerja';
 
 var NAMA_SHEET_SESI = 'Sesi';
 var NAMA_SHEET_PENILAIAN = 'Penilaian';
+var NAMA_SHEET_RESPONDEN = 'Responden';
+var NAMA_SHEET_SKEMA = 'Skema';
 
 /** Tanpa keempatnya, kebijakan izin tidak punya dasar untuk memutuskan apa pun. */
 var KOLOM_SESI_WAJIB = ['sesi_id', 'status', 'penilai', 'admin'];
+
+/**
+ * Ketiga sheet yang disalin `bacaRekap`, beserta kolom yang menyaringnya.
+ *
+ * `Responden` memuat email dan nama seluruh sesi dalam satu sheet, jadi salah
+ * saring bukan sekadar angka yang keliru melainkan data pribadi peserta yang
+ * tidak pernah diminta (spec §9.3). Karena itu kolom penyaringnya diperlakukan
+ * sebagai syarat, bukan sebagai kemudahan.
+ */
+var SHEET_REKAP = [
+  { medan: 'responden', nama: NAMA_SHEET_RESPONDEN, kolom: 'sesi_id' },
+  { medan: 'skema', nama: NAMA_SHEET_SKEMA, kolom: 'skema_id' },
+  { medan: 'penilaian', nama: NAMA_SHEET_PENILAIAN, kolom: 'sesi_id' },
+];
 
 /**
  * Spec §6.3. Urutannya di sini tidak menentukan apa pun: baris ditulis dengan
@@ -204,10 +220,13 @@ function doPost(e) {
   // dengan daftar itu saat direkap kembali. `pemanggil` dibawa apa adanya
   // supaya izinnya bisa diputuskan ULANG di dalam kunci, terhadap sheet Sesi
   // yang keadaannya bisa saja sudah berubah selama permintaan ini menunggu.
+  // Baris sesinya ikut dibawa supaya aksi baca memakai baris yang sama persis
+  // dengan yang barusan menimbang izinnya, bukan hasil pencarian keduanya.
   return balas_(
     jalankanAksi_({
       aksi: permintaan.aksi,
       sesiId: sesi.sesiId,
+      sesi: sesi,
       pemanggil: pemanggil,
       oleh: rapikanKecil_(pemanggil),
       muatan: permintaan.muatan,
@@ -223,6 +242,7 @@ function doPost(e) {
  * sukses palsu di sini berarti penilaian hilang tanpa seorang pun tahu.
  */
 function jalankanAksi_(perintah) {
+  if (perintah.aksi === 'bacaRekap') return bacaRekap_(perintah);
   if (perintah.aksi === 'simpanPenilaian') return simpanPenilaian_(perintah);
   if (perintah.aksi === 'finalkanSesi') return finalkanSesi_(perintah);
 
@@ -237,6 +257,185 @@ function jalankanAksi_(perintah) {
       perintah.sesiId +
       '", tetapi backend belum punya penanganannya: tidak ada yang dibaca maupun ditulis. ' +
       'Jangan menandai perintah ini tersimpan; kirim ulang setelah backend diperbarui.',
+  };
+}
+
+/**
+ * Menyerahkan baris MENTAH ketiga sheet yang dibutuhkan untuk merekap satu sesi.
+ *
+ * Tidak satu angka pun dihitung di sini dan tidak satu sel pun dirapikan.
+ * Pemaksaan tipe Sheets, awalan apostrof, dan sel kosong sudah ditangani
+ * adaptor di sisi klien (Batasan Global 23); backend yang ikut merapikan
+ * membuat keduanya saling menimpa, dan selisihnya hanya terlihat sebagai angka
+ * yang salah. Baris kepala ikut diserahkan karena adaptor mencari kolomnya dari
+ * situ — kisi tanpa kepala membuat baris pertama dibaca sebagai nama kolom.
+ *
+ * Tidak ada `LockService` di sini. Batasan Global 19 mengikat jalur tulis;
+ * mengunci pembacaan berarti satu rekap 500 responden membekukan setiap penilai
+ * yang sedang bekerja, sementara yang dipertaruhkan hanya satu baris `Penilaian`
+ * yang mungkin mendarat di tengah pembacaan — dan sheet itu append-only,
+ * sehingga baris yang sudah dibaca tidak pernah berubah.
+ *
+ * Balasannya tidak pernah dipotong. Rekap 500 responden memang besar, tetapi
+ * potongan diam membuat laporan tampak utuh sambil kehilangan peserta; bila
+ * batas keluaran Apps Script terlampaui, permintaannya gagal seluruhnya dan
+ * kegagalan itu terlihat.
+ */
+function bacaRekap_(perintah) {
+  var berkas = SpreadsheetApp.getActive();
+  var papan = {};
+  var hilang = [];
+  for (var i = 0; i < SHEET_REKAP.length; i += 1) {
+    var rencana = SHEET_REKAP[i];
+    var sheet =
+      berkas === null || berkas === undefined ? null : berkas.getSheetByName(rencana.nama);
+    if (sheet === null || sheet === undefined) {
+      hilang.push(rencana.nama);
+      continue;
+    }
+    // Seluruh sheet dibaca sekali lalu disaring di memori. Menyaring lewat
+    // getRange per baris membuat satu rekap memanggil Sheets ratusan kali.
+    papan[rencana.nama] = sheet.getDataRange().getValues();
+  }
+
+  if (hilang.length > 0) {
+    return {
+      ok: false,
+      kode: 'RUANG_KERJA_TIDAK_LENGKAP',
+      sesiId: perintah.sesiId,
+      pesan:
+        'Rekap tidak bisa dibaca karena sheet ' +
+        hilang.join(', ') +
+        ' tidak ada pada Spreadsheet Ruang Kerja. Sheet yang hilang bukan sheet yang kosong: ' +
+        'menjawabnya dengan daftar kosong menghasilkan laporan yang mengaku tidak ada peserta, ' +
+        'tidak ada butir yang dinilai, atau tidak ada penilaian sama sekali. Jalankan penyiapan ' +
+        'ruang kerja lebih dulu, lalu minta rekap ini lagi.',
+    };
+  }
+
+  var sesi = perintah.sesi;
+  if (sesi.skemaCacat !== '') {
+    return tolakRekapCacat_(perintah.sesiId, NAMA_SHEET_SESI, sesi.skemaCacat);
+  }
+
+  var hasil = {};
+  var peringatan = [];
+  for (var j = 0; j < SHEET_REKAP.length; j += 1) {
+    var satu = SHEET_REKAP[j];
+    var kisi = papan[satu.nama];
+    var kepala = kisi.length === 0 ? [] : kisi[0];
+    var kolom = semuaKolom_(kepala, satu.kolom);
+    if (kolom.length !== 1) {
+      return tolakRekapCacat_(
+        perintah.sesiId,
+        satu.nama,
+        'kolom "' +
+          satu.kolom +
+          '" ' +
+          (kolom.length === 0 ? 'tidak ada' : 'muncul ' + kolom.length + ' kali'),
+      );
+    }
+
+    var kunci = satu.kolom === 'skema_id' ? sesi.skemaId : perintah.sesiId;
+    var terpilih = [kepala];
+    // Kunci kosong tidak pernah dicocokkan. Menyaring dengan '' justru menarik
+    // setiap baris yang kolom kuncinya ikut kosong, lalu menghitungnya sebagai
+    // milik sesi ini.
+    if (kunci !== '') {
+      for (var b = 1; b < kisi.length; b += 1) {
+        if (rapikanTeks_(kisi[b][kolom[0]]) === kunci) terpilih.push(kisi[b]);
+      }
+    }
+    hasil[satu.medan] = terpilih;
+
+    var sepi = peringatanSepi_(satu, kunci, terpilih.length - 1, kisi.length - 1);
+    if (sepi !== '') peringatan.push(sepi);
+  }
+
+  return {
+    ok: true,
+    kode: 'REKAP',
+    sesiId: perintah.sesiId,
+    skemaId: sesi.skemaId,
+    responden: hasil.responden,
+    skema: hasil.skema,
+    penilaian: hasil.penilaian,
+    peringatan: peringatan,
+    pesan:
+      'Rekap sesi "' +
+      perintah.sesiId +
+      '" diserahkan apa adanya: ' +
+      (hasil.responden.length - 1) +
+      ' baris Responden, ' +
+      (hasil.skema.length - 1) +
+      ' baris Skema, dan ' +
+      (hasil.penilaian.length - 1) +
+      ' baris Penilaian, masing-masing beserta baris kepalanya. Tidak ada angka yang dihitung ' +
+      'di sini; perhitungannya dilakukan pemanggil.',
+  };
+}
+
+/**
+ * Nol baris yang patut dikatakan, dan nol baris yang memang wajar.
+ *
+ * `Penilaian` kosong adalah keadaan setiap sesi sebelum penilai mulai bekerja,
+ * jadi memperingatkannya membuat peringatan diabaikan justru saat ia berarti.
+ * Dua sebab kosongnya `Skema` sengaja dipisah: satu menuntut memperbaiki sel
+ * `skema_id` pada sheet Sesi, satunya menuntut skemanya disusun dari awal, dan
+ * satu pesan untuk keduanya menyuruh admin mencari di tempat yang keliru.
+ */
+function peringatanSepi_(rencana, kunci, jumlahTerpilih, jumlahData) {
+  if (jumlahTerpilih > 0) return '';
+  if (rencana.nama === NAMA_SHEET_PENILAIAN) return '';
+
+  if (rencana.nama === NAMA_SHEET_RESPONDEN) {
+    return (
+      'Tidak ada satu baris Responden pun untuk sesi ini, padahal sheet Responden memuat ' +
+      jumlahData +
+      ' baris. Impor untuk sesi ini belum pernah dijalankan, atau sesi_id pada barisnya ' +
+      'ditulis berbeda dari yang ada di sheet Sesi.'
+    );
+  }
+
+  if (kunci === '') {
+    return (
+      'Baris sesi ini tidak menyebut satu skema_id pun, jadi tidak ada baris Skema yang diambil ' +
+      'dan tidak ada butir yang bisa dinilai. Isi kolom skema_id pada sheet Sesi lebih dulu.'
+    );
+  }
+  if (jumlahData <= 0) {
+    return (
+      'Sheet Skema belum berisi satu baris pun, jadi skema "' +
+      kunci +
+      '" belum pernah disusun. Susun butirnya lebih dulu; sebelum itu rekap sesi ini tidak ' +
+      'menghasilkan nilai apa pun.'
+    );
+  }
+  return (
+    'Skema "' +
+    kunci +
+    '" tidak ada di antara ' +
+    jumlahData +
+    ' baris sheet Skema. Periksa ejaan skema_id pada baris sesi ini; butirnya mungkin ' +
+    'tersimpan dengan pengenal lain.'
+  );
+}
+
+function tolakRekapCacat_(sesiId, namaSheet, alasan) {
+  return {
+    ok: false,
+    kode: 'REKAP_CACAT',
+    sesiId: sesiId,
+    pesan:
+      'Rekap tidak bisa dibaca: pada sheet ' +
+      namaSheet +
+      ', ' +
+      alasan +
+      '. Tanpa kolom itu tidak ada cara memisahkan baris milik sesi ini dari baris sesi lain, ' +
+      'dan menebaknya berarti rekap memuat peserta beserta emailnya yang tidak pernah diminta. ' +
+      'Perbaiki kepala kolom sheet ' +
+      namaSheet +
+      ' lebih dulu.',
   };
 }
 
@@ -954,6 +1153,11 @@ function emailPemanggil_() {
  * pada lebih dari satu baris sama-sama menghasilkan `cacat`: ketiganya membuat
  * daftar peran tidak punya arti, dan menebak baris pertama berarti membuka
  * sesi final hanya karena ada baris kedua yang lebih tua.
+ *
+ * `skema_id` dibaca juga, tetapi keraguannya dibawa terpisah pada `skemaCacat`.
+ * Kebijakan izin tidak memerlukan kolom itu, jadi memasukkannya ke kolom wajib
+ * akan membuat sheet tanpa `skema_id` menolak penulisan penilaian juga —
+ * padahal yang benar-benar terhalang hanya pembacaan rekap.
  */
 function cariSesi_(sesiId) {
   var kunci = rapikanTeks_(sesiId);
@@ -964,6 +1168,8 @@ function cariSesi_(sesiId) {
     status: '',
     penilai: [],
     admin: [],
+    skemaId: '',
+    skemaCacat: '',
     baris: 0,
     kolomStatus: 0,
   };
@@ -989,6 +1195,13 @@ function cariSesi_(sesiId) {
     posisi[nama] = ditemukan[0];
   }
 
+  var kolomSkema = semuaKolom_(kepala, 'skema_id');
+  var skemaCacat =
+    kolomSkema.length === 1
+      ? ''
+      : 'kolom "skema_id" ' +
+        (kolomSkema.length === 0 ? 'tidak ada' : 'muncul ' + kolomSkema.length + ' kali');
+
   var ketemu = null;
   for (var b = 1; b < kisi.length; b += 1) {
     var baris = kisi[b];
@@ -1003,6 +1216,10 @@ function cariSesi_(sesiId) {
       status: rapikanKecil_(baris[posisi['status']]),
       penilai: daftarEmail_(baris[posisi['penilai']]),
       admin: daftarEmail_(baris[posisi['admin']]),
+      // Huruf besar-kecil skema_id dipertahankan, seperti sesi_id: keduanya
+      // dicocokkan dengan sel yang diketik admin pada sheet lain.
+      skemaId: kolomSkema.length === 1 ? rapikanTeks_(baris[kolomSkema[0]]) : '',
+      skemaCacat: skemaCacat,
       // Satu-satunya tempat posisi sel status ditentukan. Finalisasi memakainya
       // apa adanya; mencarinya ulang dengan cara lain membuka kemungkinan izin
       // diperiksa pada satu baris lalu status ditulis ke baris yang lain.
@@ -1021,6 +1238,8 @@ function cacatSesi_(sesiId, alasan) {
     status: '',
     penilai: [],
     admin: [],
+    skemaId: '',
+    skemaCacat: '',
     baris: 0,
     kolomStatus: 0,
   };

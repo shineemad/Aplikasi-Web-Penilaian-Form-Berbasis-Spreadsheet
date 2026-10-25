@@ -32,7 +32,7 @@ const POLA_LITERAL = /'([A-Z][A-Z_]{2,})'/g;
  * salah satunya berubah menjadi penolakan, ia harus dipindahkan ke salah satu
  * daftar di `store.ts`, dan uji ini akan merah sampai itu dilakukan.
  */
-const KODE_SUKSES = ['TERSIMPAN', 'DIFINALKAN', 'SIAP', 'SIAP_DENGAN_PERINGATAN'];
+const KODE_SUKSES = ['TERSIMPAN', 'DIFINALKAN', 'SIAP', 'SIAP_DENGAN_PERINGATAN', 'REKAP'];
 
 function kodeDalamSumber(sumber: string): Set<string> {
   const hasil = new Set<string>();

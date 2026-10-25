@@ -66,6 +66,11 @@ export const KODE_PERMANEN = [
   'PEMILIK_TIDAK_DIKETAHUI',
   'PENILAIAN_TIDAK_ADA',
   'PENILAIAN_CACAT',
+  // Keduanya menuntut admin menyunting Spreadsheet lebih dulu: sheet yang hilang
+  // harus disiapkan, kepala kolom yang kembar harus dibetulkan. Mengirim ulang
+  // permintaan yang sama hanya memanggil kegagalan yang sama.
+  'RUANG_KERJA_TIDAK_LENGKAP',
+  'REKAP_CACAT',
 ];
 
 /**
