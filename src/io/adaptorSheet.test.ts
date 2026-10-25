@@ -1,11 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import {
-  bacaPenilaian,
-  bacaProyek,
-  bacaRespondenTetap,
-  bacaSesi,
-  bacaSkemaMentah,
-} from './adaptorSheet';
+import type { RespondenSesi } from '../core/sesi';
+import type { Skema } from '../core/tipe';
+import { bacaPenilaian, bacaProyek, bacaResponden, bacaSesi, bacaSkema } from './adaptorSheet';
 
 // Kepala kolom disalin dari KEPALA_RUANG_KERJA di apps-script/Kode.gs, bukan
 // dari ingatan: satu nama yang salah eja membuat adaptor membaca kolom yang
@@ -40,6 +36,7 @@ const KEPALA_SKEMA = [
   'parameter',
   'skor_maks',
   'bobot',
+  'perlakuan_kosong',
 ];
 const KEPALA_PROYEK = ['proyek_id', 'nama', 'sesi_urut', 'sesi_awal', 'sesi_akhir', 'dibuat_pada'];
 
@@ -422,9 +419,9 @@ describe('bacaProyek', () => {
   });
 });
 
-describe('bacaRespondenTetap', () => {
+describe('bacaResponden', () => {
   it('membaca kolom tetap Responden dan menormalkan emailnya', () => {
-    const hasil = bacaRespondenTetap([
+    const hasil = bacaResponden([
       KEPALA_RESPONDEN,
       ['pre', 'a1b2c3d4e5f60718', ' Budi@Sekolah.id ', 'Budi', 'lengkap', '2026-01-02'],
     ]);
@@ -438,12 +435,14 @@ describe('bacaRespondenTetap', () => {
         nama: 'Budi',
         kelengkapan: { status: 'lengkap' },
         diimporPada: '2026-01-02',
+        jawaban: {},
+        meta: {},
       },
     ]);
   });
 
   it('menerjemahkan nama kosong menjadi null, karena §6.1 membolehkannya', () => {
-    const hasil = bacaRespondenTetap([
+    const hasil = bacaResponden([
       KEPALA_RESPONDEN,
       ['pre', 'r1', 'budi@sekolah.id', '', 'kosong', '2026-01-02'],
     ]);
@@ -454,7 +453,7 @@ describe('bacaRespondenTetap', () => {
   });
 
   it('mengurai status_kelengkapan kurang:N menjadi angka', () => {
-    const hasil = bacaRespondenTetap([
+    const hasil = bacaResponden([
       KEPALA_RESPONDEN,
       ['pre', 'r1', 'budi@sekolah.id', 'Budi', 'kurang:3', '2026-01-02'],
     ]);
@@ -463,7 +462,7 @@ describe('bacaRespondenTetap', () => {
   });
 
   it('menandai status_kelengkapan yang tidak dikenal', () => {
-    const hasil = bacaRespondenTetap([
+    const hasil = bacaResponden([
       KEPALA_RESPONDEN,
       ['pre', 'r1', 'budi@sekolah.id', 'Budi', 'separuh', '2026-01-02'],
     ]);
@@ -473,7 +472,7 @@ describe('bacaRespondenTetap', () => {
   });
 
   it('menandai baris yang id atau email-nya kosong', () => {
-    const hasil = bacaRespondenTetap([
+    const hasil = bacaResponden([
       KEPALA_RESPONDEN,
       ['pre', '', 'budi@sekolah.id', 'Budi', 'lengkap', '2026-01-02'],
     ]);
@@ -482,67 +481,407 @@ describe('bacaRespondenTetap', () => {
     expect(hasil.masalah[0]?.pesan).toMatch(/\bid\b/);
   });
 
-  it('tidak melempar pada kolom jawaban_* dan meta_* yang belum berbentuk tetap', () => {
-    // Kolom dinamis sengaja TIDAK dibaca di sini: bentuk `jawaban_<apa>`
-    // belum ditetapkan spec, sehingga memetakannya kembali ke `kolom_asal`
-    // hanya bisa ditebak. Lihat laporan celah.
-    const hasil = bacaRespondenTetap([
-      [...KEPALA_RESPONDEN, 'meta_Age', 'jawaban_Q1'],
-      ['pre', 'r1', 'budi@sekolah.id', 'Budi', 'lengkap', '2026-01-02', '20', 'Agree'],
+  it('membuang awalan jawaban_ dan meta_ lalu memangkas spasi tepinya saja', () => {
+    // Koreksi D7. Pembalikannya wajib fungsi identitas: slug tidak bisa
+    // dibalik, dan spasi ganda di tengah header memang ada pada form nyata.
+    const hasil = bacaResponden([
+      [...KEPALA_RESPONDEN, ' meta_Umur ', 'jawaban_Q1  Saya puas '],
+      ['pre', 'r1', 'budi@sekolah.id', 'Budi', 'lengkap', '2026-01-02', '20', 'Strongly Agree'],
     ]);
 
     expect(hasil.masalah).toEqual([]);
-    expect(hasil.baris).toHaveLength(1);
+    expect(hasil.baris[0]?.meta).toEqual({ Umur: '20' });
+    expect(hasil.baris[0]?.jawaban).toEqual({ 'Q1  Saya puas': 'Strongly Agree' });
+  });
+
+  it('memakai kunci jawaban yang sama persis dengan kolom_asal pada Skema', () => {
+    // Satu-satunya hal yang membuat D7 berguna. Pencocokan keduanya memakai
+    // pangkas spasi tepi saja; merapatkan salah satunya memutus sambungan ini
+    // tanpa satu pun angka berubah tampak.
+    const header = 'Q1  Saya puas dengan layanan ini?';
+    const responden = bacaResponden([
+      [...KEPALA_RESPONDEN, `jawaban_${header}`],
+      ['pre', 'r1', 'budi@sekolah.id', 'Budi', 'lengkap', '2026-01-02', 'setuju'],
+    ]);
+    const skema = bacaSkema([
+      KEPALA_SKEMA,
+      [
+        's1',
+        header,
+        'Kepuasan',
+        'layanan',
+        'peta-opsi',
+        '{"peta":{"setuju":4},"skorMaks":5}',
+        5,
+        1,
+        'abaikan',
+      ],
+    ]);
+
+    const kolomAsal = skema.baris[0]?.butir[0]?.kolomAsal ?? '';
+    expect(kolomAsal).toBe(header);
+    expect(responden.baris[0]?.jawaban[kolomAsal]).toBe('setuju');
+  });
+
+  it('mempertahankan jawaban kosong sebagai string kosong, bukan menghilangkan kolomnya', () => {
+    // Kolom yang seluruh barisnya kosong akan terbaca "tidak ada" oleh
+    // periksaSkema bila dibuang, lalu admin diminta memperbaiki kolom yang ada.
+    const hasil = bacaResponden([
+      [...KEPALA_RESPONDEN, 'jawaban_Q1'],
+      ['pre', 'r1', 'budi@sekolah.id', 'Budi', 'kosong', '2026-01-02', ''],
+    ]);
+
+    expect(hasil.baris[0]?.jawaban).toEqual({ Q1: '' });
+    expect(Object.keys(hasil.baris[0]?.jawaban ?? {})).toEqual(['Q1']);
+  });
+
+  it('menerjemahkan jawaban bertipe angka menjadi teks', () => {
+    const hasil = bacaResponden([
+      [...KEPALA_RESPONDEN, 'jawaban_Usia'],
+      ['pre', 'r1', 'budi@sekolah.id', 'Budi', 'lengkap', '2026-01-02', 17],
+    ]);
+
+    expect(hasil.baris[0]?.jawaban).toEqual({ Usia: '17' });
+  });
+
+  it('menandai kepala jawaban_ yang sisanya kosong, tidak mengabaikannya', () => {
+    const hasil = bacaResponden([
+      [...KEPALA_RESPONDEN, 'jawaban_  '],
+      ['pre', 'r1', 'budi@sekolah.id', 'Budi', 'lengkap', '2026-01-02', 'Agree'],
+    ]);
+
+    expect(hasil.baris).toEqual([]);
+    expect(hasil.masalah).toHaveLength(1);
+    expect(hasil.masalah[0]?.jenis).toBe('kepala');
+    expect(hasil.masalah[0]?.pesan).toMatch(/jawaban_/);
+  });
+
+  it('menolak dua kolom dinamis yang bentrok setelah dipangkas, tidak menimpa diam-diam', () => {
+    const hasil = bacaResponden([
+      [...KEPALA_RESPONDEN, 'jawaban_Q1', 'jawaban_Q1 '],
+      ['pre', 'r1', 'budi@sekolah.id', 'Budi', 'lengkap', '2026-01-02', 'Agree', 'Disagree'],
+    ]);
+
+    expect(hasil.baris).toEqual([]);
+    expect(hasil.masalah[0]?.jenis).toBe('kepala');
+    expect(hasil.masalah[0]?.pesan).toMatch(/jawaban_Q1/);
+  });
+
+  it('tidak menganggap jawaban_Q1 dan meta_Q1 saling bentrok', () => {
+    const hasil = bacaResponden([
+      [...KEPALA_RESPONDEN, 'jawaban_Q1', 'meta_Q1'],
+      ['pre', 'r1', 'budi@sekolah.id', 'Budi', 'lengkap', '2026-01-02', 'Agree', 'kelas A'],
+    ]);
+
+    expect(hasil.masalah).toEqual([]);
+    expect(hasil.baris[0]?.jawaban).toEqual({ Q1: 'Agree' });
+    expect(hasil.baris[0]?.meta).toEqual({ Q1: 'kelas A' });
+  });
+
+  it('mengenali awalan yang ditulis dengan huruf besar, lalu menandai bentroknya', () => {
+    // Awalan yang ditulis tangan dengan huruf besar tidak boleh membuat satu
+    // kolom jawaban hilang diam-diam; tetapi dua bentuk yang sama setelah
+    // awalannya dibuang tetap bentrok.
+    const terbaca = bacaResponden([
+      [...KEPALA_RESPONDEN, 'Meta_Umur'],
+      ['pre', 'r1', 'budi@sekolah.id', 'Budi', 'lengkap', '2026-01-02', '20'],
+    ]);
+    expect(terbaca.baris[0]?.meta).toEqual({ Umur: '20' });
+
+    const bentrok = bacaResponden([
+      [...KEPALA_RESPONDEN, 'meta_Umur', 'Meta_Umur'],
+      ['pre', 'r1', 'budi@sekolah.id', 'Budi', 'lengkap', '2026-01-02', '20', '21'],
+    ]);
+    expect(bentrok.baris).toEqual([]);
+    expect(bentrok.masalah[0]?.jenis).toBe('kepala');
+  });
+
+  it('menghasilkan baris yang langsung berlaku sebagai RespondenSesi', () => {
+    // Bukti pada waktu typecheck: bentuk yang dipakai bangunNilaiSesi.
+    const hasil = bacaResponden([
+      [...KEPALA_RESPONDEN, 'jawaban_Q1'],
+      ['pre', 'r1', 'budi@sekolah.id', 'Budi', 'lengkap', '2026-01-02', 'Agree'],
+    ]);
+
+    const responden: RespondenSesi[] = hasil.baris;
+    expect(responden[0]?.jawaban).toEqual({ Q1: 'Agree' });
   });
 });
 
-describe('bacaSkemaMentah', () => {
-  it('membaca baris Skema tanpa menafsirkan parameter menjadi Aturan', () => {
-    const hasil = bacaSkemaMentah([
+describe('bacaSkema', () => {
+  it('menafsirkan parameter peta-opsi menjadi Aturan beserta perlakuanKosong', () => {
+    const hasil = bacaSkema([
       KEPALA_SKEMA,
-      ['s1', 'Q1  Saya puas', 'Kepuasan', 'kemudahan', 'peta-opsi', '{"agree":4}', 5, 1],
+      [
+        's1',
+        'Q1  Saya puas',
+        'Kepuasan',
+        'kemudahan',
+        'peta-opsi',
+        '{"peta":{"agree":4,"strongly agree":5},"skorMaks":5}',
+        5,
+        1,
+        'abaikan',
+      ],
     ]);
 
     expect(hasil.masalah).toEqual([]);
-    expect(hasil.baris).toEqual([
+    expect(hasil.baris).toEqual<Skema[]>([
       {
         skemaId: 's1',
-        kolomAsal: 'Q1  Saya puas',
-        label: 'Kepuasan',
-        dimensi: 'kemudahan',
-        jenisAturan: 'peta-opsi',
-        parameter: { agree: 4 },
-        skorMaks: 5,
-        bobot: 1,
+        perlakuanKosong: 'abaikan',
+        butir: [
+          {
+            kolomAsal: 'Q1  Saya puas',
+            label: 'Kepuasan',
+            dimensi: 'kemudahan',
+            aturan: { jenis: 'peta-opsi', peta: { agree: 4, 'strongly agree': 5 }, skorMaks: 5 },
+            bobot: 1,
+          },
+        ],
       },
     ]);
   });
 
-  it('menerjemahkan parameter dan skor_maks yang kosong menjadi null', () => {
-    const hasil = bacaSkemaMentah([
+  it('menafsirkan kunci-jawaban, manual, dan abaikan menurut §7.1', () => {
+    const hasil = bacaSkema([
       KEPALA_SKEMA,
-      ['s1', 'Catatan', 'Catatan', 'lain', 'abaikan', '', '', 1],
+      ['s1', 'Soal 1', 'Soal 1', 'pengetahuan', 'kunci-jawaban', '{"benar":"B"}', 1, 1, 'nol'],
+      ['s1', 'Esai', 'Esai', 'penalaran', 'manual', '{"min":0,"maks":100}', 100, 2, 'nol'],
+      ['s1', 'Saran', 'Saran', 'lain', 'abaikan', '', '', 1, 'nol'],
     ]);
 
     expect(hasil.masalah).toEqual([]);
-    expect(hasil.baris[0]?.parameter).toBeNull();
-    expect(hasil.baris[0]?.skorMaks).toBeNull();
+    expect(hasil.baris[0]?.perlakuanKosong).toBe('nol');
+    expect(hasil.baris[0]?.butir.map((satu) => satu.aturan)).toEqual([
+      { jenis: 'kunci-jawaban', kunci: 'B' },
+      { jenis: 'manual', min: 0, maks: 100 },
+      { jenis: 'abaikan' },
+    ]);
   });
 
-  it('menandai parameter yang bukan JSON sah', () => {
-    const hasil = bacaSkemaMentah([
+  it('mengelompokkan baris menjadi satu Skema per skema_id, menurut urutan sheet', () => {
+    const hasil = bacaSkema([
       KEPALA_SKEMA,
-      ['s1', 'Q1', 'Kepuasan', 'kemudahan', 'peta-opsi', '{agree:4}', 5, 1],
+      ['post', 'Q2', 'Q2', 'd', 'manual', '{"min":0,"maks":10}', '', 1, 'nol'],
+      ['pre', 'Q1', 'Q1', 'd', 'manual', '{"min":0,"maks":10}', '', 1, 'abaikan'],
+      ['post', 'Q3', 'Q3', 'd', 'manual', '{"min":0,"maks":10}', '', 1, 'nol'],
     ]);
+
+    expect(hasil.masalah).toEqual([]);
+    expect(hasil.baris.map((satu) => satu.skemaId)).toEqual(['post', 'pre']);
+    expect(hasil.baris[0]?.butir).toHaveLength(2);
+    expect(hasil.baris[1]?.butir).toHaveLength(1);
+  });
+
+  it('menandai perselisihan perlakuan_kosong, tidak mengambil baris pertama', () => {
+    // Koreksi D6. Nilainya terulang tiap baris, jadi dua baris bisa berselisih;
+    // memilih yang pertama berarti separuh skema dinilai dengan aturan yang
+    // tidak pernah dipilih siapa pun.
+    const hasil = bacaSkema([
+      KEPALA_SKEMA,
+      ['s1', 'Q1', 'Q1', 'd', 'manual', '{"min":0,"maks":10}', '', 1, 'abaikan'],
+      ['s1', 'Q2', 'Q2', 'd', 'manual', '{"min":0,"maks":10}', '', 1, 'nol'],
+    ]);
+
+    expect(hasil.baris).toEqual([]);
+    expect(hasil.masalah).toHaveLength(1);
+    expect(hasil.masalah[0]?.nomorBaris).toBe(3);
+    expect(hasil.masalah[0]?.pesan).toMatch(/abaikan/);
+    expect(hasil.masalah[0]?.pesan).toMatch(/nol/);
+    expect(hasil.masalah[0]?.pesan).toMatch(/baris 2/);
+  });
+
+  it('menandai perlakuan_kosong yang masih kosong, karena §7.2 butir 3 menuntut keputusan', () => {
+    const hasil = bacaSkema([
+      KEPALA_SKEMA,
+      ['s1', 'Q1', 'Q1', 'd', 'manual', '{"min":0,"maks":10}', '', 1, ''],
+    ]);
+
+    expect(hasil.baris).toEqual([]);
+    expect(hasil.masalah[0]?.pesan).toMatch(/perlakuan_kosong/);
+    expect(hasil.masalah[0]?.pesan).toMatch(/§7\.2/);
+  });
+
+  it('menandai perlakuan_kosong di luar abaikan dan nol, tidak menebaknya', () => {
+    const hasil = bacaSkema([
+      KEPALA_SKEMA,
+      ['s1', 'Q1', 'Q1', 'd', 'manual', '{"min":0,"maks":10}', '', 1, 'kosongkan'],
+    ]);
+
+    expect(hasil.baris).toEqual([]);
+    expect(hasil.masalah[0]?.pesan).toMatch(/kosongkan/);
+  });
+
+  it('menerima perlakuan_kosong yang berbeda huruf besar-kecil sebagai nilai yang sama', () => {
+    const hasil = bacaSkema([
+      KEPALA_SKEMA,
+      ['s1', 'Q1', 'Q1', 'd', 'manual', '{"min":0,"maks":10}', '', 1, 'Abaikan'],
+      ['s1', 'Q2', 'Q2', 'd', 'manual', '{"min":0,"maks":10}', '', 1, ' abaikan '],
+    ]);
+
+    expect(hasil.masalah).toEqual([]);
+    expect(hasil.baris[0]?.perlakuanKosong).toBe('abaikan');
+  });
+
+  it('menandai skor_maks yang berselisih dengan parameter, tetapi tetap memakai parameter', () => {
+    // Koreksi D8. Angkanya tidak salah — yang salah adalah keyakinan pembaca
+    // sheet pada angka yang tidak dipakai menghitung apa pun.
+    const hasil = bacaSkema([
+      KEPALA_SKEMA,
+      ['s1', 'Q1', 'Q1', 'd', 'peta-opsi', '{"peta":{"agree":4},"skorMaks":4}', 5, 1, 'abaikan'],
+    ]);
+
+    expect(hasil.baris).toHaveLength(1);
+    expect(hasil.baris[0]?.butir[0]?.aturan).toEqual({
+      jenis: 'peta-opsi',
+      peta: { agree: 4 },
+      skorMaks: 4,
+    });
+    expect(hasil.masalah).toHaveLength(1);
+    expect(hasil.masalah[0]?.jenis).toBe('peringatan');
+    expect(hasil.masalah[0]?.nomorBaris).toBe(2);
+    expect(hasil.masalah[0]?.pesan).toMatch(/skor_maks/);
+  });
+
+  it('menandai skor_maks yang berselisih pada kunci-jawaban dan manual', () => {
+    const hasil = bacaSkema([
+      KEPALA_SKEMA,
+      ['s1', 'Soal', 'Soal', 'd', 'kunci-jawaban', '{"benar":"B"}', 4, 1, 'nol'],
+      ['s1', 'Esai', 'Esai', 'd', 'manual', '{"min":0,"maks":100}', 10, 1, 'nol'],
+    ]);
+
+    expect(hasil.baris).toHaveLength(1);
+    expect(hasil.masalah.map((satu) => satu.nomorBaris)).toEqual([2, 3]);
+    expect(hasil.masalah.every((satu) => satu.jenis === 'peringatan')).toBe(true);
+  });
+
+  it('menandai skor_maks yang terisi pada aturan abaikan', () => {
+    const hasil = bacaSkema([
+      KEPALA_SKEMA,
+      ['s1', 'Saran', 'Saran', 'lain', 'abaikan', '', 5, 1, 'nol'],
+    ]);
+
+    expect(hasil.baris).toHaveLength(1);
+    expect(hasil.masalah[0]?.jenis).toBe('peringatan');
+    expect(hasil.masalah[0]?.pesan).toMatch(/abaikan/);
+  });
+
+  it('tidak menganggap skor_maks yang kosong sebagai perselisihan', () => {
+    const hasil = bacaSkema([
+      KEPALA_SKEMA,
+      ['s1', 'Q1', 'Q1', 'd', 'peta-opsi', '{"peta":{"agree":4},"skorMaks":5}', '', 1, 'nol'],
+    ]);
+
+    expect(hasil.masalah).toEqual([]);
+    expect(hasil.baris[0]?.butir[0]?.aturan).toEqual({
+      jenis: 'peta-opsi',
+      peta: { agree: 4 },
+      skorMaks: 5,
+    });
+  });
+
+  it('menandai parameter yang bukan JSON sah tanpa melempar', () => {
+    const bacaan = () =>
+      bacaSkema([
+        KEPALA_SKEMA,
+        ['s1', 'Q1', 'Q1', 'd', 'peta-opsi', '{peta:{agree:4}}', 5, 1, 'nol'],
+      ]);
+
+    expect(bacaan).not.toThrow();
+    const hasil = bacaan();
+    expect(hasil.baris).toEqual([]);
+    expect(hasil.masalah[0]?.pesan).toMatch(/parameter/);
+  });
+
+  it('menandai parameter yang bukan objek, termasuk larik dan angka', () => {
+    const hasil = bacaSkema([
+      KEPALA_SKEMA,
+      ['s1', 'Q1', 'Q1', 'd', 'peta-opsi', '[1,2,3]', '', 1, 'nol'],
+      ['s1', 'Q2', 'Q2', 'd', 'manual', '7', '', 1, 'nol'],
+      ['s1', 'Q3', 'Q3', 'd', 'kunci-jawaban', 'null', '', 1, 'nol'],
+    ]);
+
+    expect(hasil.baris).toEqual([]);
+    expect(hasil.masalah.map((satu) => satu.nomorBaris)).toEqual([2, 3, 4]);
+  });
+
+  it('menandai parameter yang bentuknya milik aturan lain', () => {
+    const hasil = bacaSkema([
+      KEPALA_SKEMA,
+      ['s1', 'Q1', 'Q1', 'd', 'peta-opsi', '{"min":0,"maks":100}', '', 1, 'nol'],
+    ]);
+
+    expect(hasil.baris).toEqual([]);
+    expect(hasil.masalah[0]?.pesan).toMatch(/peta/);
+  });
+
+  it('menandai parameter kosong pada aturan yang membutuhkannya', () => {
+    const hasil = bacaSkema([KEPALA_SKEMA, ['s1', 'Q1', 'Q1', 'd', 'manual', '', 100, 1, 'nol']]);
 
     expect(hasil.baris).toEqual([]);
     expect(hasil.masalah[0]?.pesan).toMatch(/parameter/);
   });
 
-  it('menandai aturan di luar keempat yang sah', () => {
-    const hasil = bacaSkemaMentah([
+  it('menerima peta opsi yang bernilai nol maupun negatif', () => {
+    // Skala yang menghukum jawaban menyesatkan adalah rancangan yang sah.
+    const hasil = bacaSkema([
       KEPALA_SKEMA,
-      ['s1', 'Q1', 'Kepuasan', 'kemudahan', 'rata-rata', '{}', 5, 1],
+      [
+        's1',
+        'Q1',
+        'Q1',
+        'd',
+        'peta-opsi',
+        '{"peta":{"salah":-1,"tidak tahu":0,"benar":1},"skorMaks":1}',
+        1,
+        1,
+        'nol',
+      ],
+    ]);
+
+    expect(hasil.masalah).toEqual([]);
+    expect(hasil.baris[0]?.butir[0]?.aturan).toEqual({
+      jenis: 'peta-opsi',
+      peta: { salah: -1, 'tidak tahu': 0, benar: 1 },
+      skorMaks: 1,
+    });
+  });
+
+  it('menandai nilai peta yang bukan angka', () => {
+    const hasil = bacaSkema([
+      KEPALA_SKEMA,
+      ['s1', 'Q1', 'Q1', 'd', 'peta-opsi', '{"peta":{"agree":"4"},"skorMaks":5}', '', 1, 'nol'],
+    ]);
+
+    expect(hasil.baris).toEqual([]);
+    expect(hasil.masalah[0]?.pesan).toMatch(/agree/);
+  });
+
+  it('menandai kunci jawaban yang kosong, yang akan membuat semua orang bernilai nol', () => {
+    const hasil = bacaSkema([
+      KEPALA_SKEMA,
+      ['s1', 'Soal', 'Soal', 'd', 'kunci-jawaban', '{"benar":"  "}', 1, 1, 'nol'],
+    ]);
+
+    expect(hasil.baris).toEqual([]);
+    expect(hasil.masalah[0]?.pesan).toMatch(/benar/);
+  });
+
+  it('menandai rentang manual yang min-nya melampaui maks', () => {
+    const hasil = bacaSkema([
+      KEPALA_SKEMA,
+      ['s1', 'Esai', 'Esai', 'd', 'manual', '{"min":100,"maks":0}', '', 1, 'nol'],
+    ]);
+
+    expect(hasil.baris).toEqual([]);
+    expect(hasil.masalah[0]?.pesan).toMatch(/min 100/);
+  });
+
+  it('menandai aturan di luar keempat yang sah', () => {
+    const hasil = bacaSkema([
+      KEPALA_SKEMA,
+      ['s1', 'Q1', 'Kepuasan', 'kemudahan', 'rata-rata', '{}', 5, 1, 'nol'],
     ]);
 
     expect(hasil.baris).toEqual([]);
@@ -550,9 +889,29 @@ describe('bacaSkemaMentah', () => {
   });
 
   it('menandai bobot yang bukan angka, bukan menggantinya dengan satu', () => {
-    const hasil = bacaSkemaMentah([
+    const hasil = bacaSkema([
       KEPALA_SKEMA,
-      ['s1', 'Q1', 'Kepuasan', 'kemudahan', 'peta-opsi', '{"agree":4}', 5, 'satu'],
+      [
+        's1',
+        'Q1',
+        'Kepuasan',
+        'd',
+        'peta-opsi',
+        '{"peta":{"agree":4},"skorMaks":5}',
+        5,
+        'satu',
+        'nol',
+      ],
+    ]);
+
+    expect(hasil.baris).toEqual([]);
+    expect(hasil.masalah[0]?.pesan).toMatch(/bobot/);
+  });
+
+  it('menandai bobot yang kosong, karena kosong bukan bobot nol', () => {
+    const hasil = bacaSkema([
+      KEPALA_SKEMA,
+      ['s1', 'Q1', 'Kepuasan', 'd', 'peta-opsi', '{"peta":{"agree":4},"skorMaks":5}', 5, '', 'nol'],
     ]);
 
     expect(hasil.baris).toEqual([]);
@@ -560,13 +919,108 @@ describe('bacaSkemaMentah', () => {
   });
 
   it('menerima bobot dan skor_maks bertipe teks', () => {
-    const hasil = bacaSkemaMentah([
+    const hasil = bacaSkema([
       KEPALA_SKEMA,
-      ['s1', 'Q1', 'Kepuasan', 'kemudahan', 'peta-opsi', '{"agree":4}', '5', '0.5'],
+      [
+        's1',
+        'Q1',
+        'Kepuasan',
+        'd',
+        'peta-opsi',
+        '{"peta":{"agree":4},"skorMaks":5}',
+        '5',
+        '0.5',
+        'nol',
+      ],
     ]);
 
     expect(hasil.masalah).toEqual([]);
-    expect(hasil.baris[0]?.skorMaks).toBe(5);
-    expect(hasil.baris[0]?.bobot).toBe(0.5);
+    expect(hasil.baris[0]?.butir[0]?.bobot).toBe(0.5);
+  });
+
+  it('tidak menghasilkan Skema yang salah satu butirnya gagal dibaca', () => {
+    // Rata-rata terbobot atas separuh instrumen adalah cacat yang rencana ini
+    // perbaiki; menghasilkan skema tanpa butir yang gagal mengulanginya.
+    const hasil = bacaSkema([
+      KEPALA_SKEMA,
+      ['s1', 'Q1', 'Q1', 'd', 'peta-opsi', '{"peta":{"agree":4},"skorMaks":5}', 5, 1, 'nol'],
+      ['s1', 'Q2', 'Q2', 'd', 'peta-opsi', 'bukan json', 5, 1, 'nol'],
+    ]);
+
+    expect(hasil.baris).toEqual([]);
+    expect(hasil.masalah[0]?.nomorBaris).toBe(3);
+  });
+
+  it('tidak menjatuhkan skema lain gara-gara satu skema cacat', () => {
+    const hasil = bacaSkema([
+      KEPALA_SKEMA,
+      ['rusak', 'Q1', 'Q1', 'd', 'peta-opsi', 'bukan json', '', 1, 'nol'],
+      ['utuh', 'Q1', 'Q1', 'd', 'manual', '{"min":0,"maks":10}', '', 1, 'nol'],
+    ]);
+
+    expect(hasil.baris.map((satu) => satu.skemaId)).toEqual(['utuh']);
+    expect(hasil.masalah).toHaveLength(1);
+  });
+
+  it('menandai baris yang skema_id-nya kosong tanpa menjatuhkan skema mana pun', () => {
+    const hasil = bacaSkema([
+      KEPALA_SKEMA,
+      ['', 'Q1', 'Q1', 'd', 'manual', '{"min":0,"maks":10}', '', 1, 'nol'],
+      ['s1', 'Q2', 'Q2', 'd', 'manual', '{"min":0,"maks":10}', '', 1, 'nol'],
+    ]);
+
+    expect(hasil.baris.map((satu) => satu.skemaId)).toEqual(['s1']);
+    expect(hasil.masalah[0]?.nomorBaris).toBe(2);
+    expect(hasil.masalah[0]?.pesan).toMatch(/skema_id/);
+  });
+
+  it('menandai kolom_asal kembar dalam satu skema, karena bobotnya terhitung dua kali', () => {
+    const hasil = bacaSkema([
+      KEPALA_SKEMA,
+      ['s1', 'Q1 ', 'Q1', 'd', 'manual', '{"min":0,"maks":10}', '', 1, 'nol'],
+      ['s1', ' Q1', 'Q1 lagi', 'd', 'manual', '{"min":0,"maks":10}', '', 1, 'nol'],
+    ]);
+
+    expect(hasil.baris[0]?.butir).toHaveLength(2);
+    expect(hasil.masalah).toHaveLength(1);
+    expect(hasil.masalah[0]?.jenis).toBe('peringatan');
+    expect(hasil.masalah[0]?.nomorBaris).toBe(3);
+  });
+
+  it('menolak sheet Skema yang kepalanya kurang kolom perlakuan_kosong', () => {
+    const hasil = bacaSkema([
+      KEPALA_SKEMA.filter((nama) => nama !== 'perlakuan_kosong'),
+      ['s1', 'Q1', 'Q1', 'd', 'manual', '{"min":0,"maks":10}', '', 1],
+    ]);
+
+    expect(hasil.baris).toEqual([]);
+    expect(hasil.masalah[0]?.jenis).toBe('kepala');
+    expect(hasil.masalah[0]?.pesan).toMatch(/perlakuan_kosong/);
+  });
+
+  it('tidak bergantung pada urutan kolom', () => {
+    const hasil = bacaSkema([
+      [
+        'bobot',
+        'perlakuan_kosong',
+        'aturan',
+        'skema_id',
+        'parameter',
+        'kolom_asal',
+        'label',
+        'dimensi',
+        'skor_maks',
+      ],
+      [1, 'nol', 'manual', 's1', '{"min":0,"maks":10}', 'Esai', 'Esai', 'd', 10],
+    ]);
+
+    expect(hasil.masalah).toEqual([]);
+    expect(hasil.baris[0]?.butir[0]).toEqual({
+      kolomAsal: 'Esai',
+      label: 'Esai',
+      dimensi: 'd',
+      aturan: { jenis: 'manual', min: 0, maks: 10 },
+      bobot: 1,
+    });
   });
 });

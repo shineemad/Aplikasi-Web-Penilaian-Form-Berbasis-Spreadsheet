@@ -395,6 +395,8 @@ Jalankan perintahnya, lihat keluarannya, baru menyatakan beres.
 | Hal | Alasan |
 | --- | --- |
 | **Impor menulis `Responden` dan `Skema` ke sheet** | Belum ada aksi `simpanResponden`, `ubahSkema`, `ubahBobot`, maupun `buatSesi`. Tanpa itu, rekap hanya bisa membaca sheet yang diisi tangan — jalur bacanya terbukti, isinya belum. Ini rencana berikutnya yang paling masuk akal |
+| **Dua kewajiban D7 ditegakkan saat impor** | Header yang memuat baris baru wajib **ditolak** (ia memecah kepala kolom di sheet), dan dua header yang **bentrok setelah dipangkas** wajib ditolak dengan menyebut keduanya. Keduanya tidak bisa ditegakkan saat membaca: pada saat itu kerusakannya sudah tertulis di sheet. Adaptor hanya dapat menolak kolom `jawaban_*`/`meta_*` yang kembar atau tak bernama — penjaga terakhir, bukan pengganti |
+| **`parameter` untuk `peta-opsi` menuntut suntingan §7.1** | D8 menetapkan `parameter` sebagai sumber kebenaran, tetapi contoh §7.1 berupa peta datar yang tidak punya tempat untuk `skorMaks` — padahal `usulAturan.ts` menolak menurunkannya dari data. Adaptor membaca `{"peta":{…},"skorMaks":5}`; §7.1 perlu menyusul |
 | **C3 — hosting** | Memblokir Rencana UI, bukan rencana ini |
 | **C4 dan C6 — mode deployment dan wewenang penyiapan** | Menunggu protokol keamanan dijalankan dengan akun kedua |
 | **C7 — pemeriksaan isi penilaian di server** | D3 memindahkan validasi rentang ke core, sehingga C7 kini hanya menyisakan pemeriksaan keberadaan `respondenId` dan `kriteria` |
