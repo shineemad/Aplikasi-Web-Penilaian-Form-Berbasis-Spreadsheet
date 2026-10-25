@@ -2,19 +2,14 @@ import { normalisasiTeks } from './normalisasi';
 import type { ButirSkema, JawabanResponden, Skema } from './tipe';
 
 export type Kelengkapan =
-  | { status: 'lengkap' }
-  | { status: 'kurang'; jumlahKosong: number }
-  | { status: 'kosong' };
+  { status: 'lengkap' } | { status: 'kurang'; jumlahKosong: number } | { status: 'kosong' };
 
 /** Satu-satunya definisi kolom mana yang diperhitungkan dalam kelengkapan. */
 export function diisiResponden(butir: ButirSkema): boolean {
   return butir.aturan.jenis === 'peta-opsi' || butir.aturan.jenis === 'kunci-jawaban';
 }
 
-export function hitungKelengkapan(
-  responden: JawabanResponden,
-  skema: Skema,
-): Kelengkapan {
+export function hitungKelengkapan(responden: JawabanResponden, skema: Skema): Kelengkapan {
   let diminta = 0;
   let kosong = 0;
 

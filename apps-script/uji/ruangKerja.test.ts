@@ -255,7 +255,12 @@ describe('penyiapan berisik saat ragu, bukan menebak', () => {
     // Aturan 3 repo. Sheet berisi data tidak boleh disentuh, tetapi diam saja
     // berarti kolom yang hilang baru ketahuan saat penulisan pertama gagal.
     const ss = buatSpreadsheetPalsu(
-      { Sesi: [['sesi_id', 'status', 'penilai'], ['S1', 'berjalan', 'penilai@kampus.id']] },
+      {
+        Sesi: [
+          ['sesi_id', 'status', 'penilai'],
+          ['S1', 'berjalan', 'penilai@kampus.id'],
+        ],
+      },
       { pemilik: PEMILIK },
     );
     const sebelum = isiSeluruhSheet(ss).Sesi;

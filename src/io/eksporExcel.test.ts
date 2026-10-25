@@ -53,7 +53,11 @@ describe('tulisExcel', () => {
   it('menulis setiap tabel sebagai lembar tersendiri bernama judulnya', () => {
     const isi = tulisExcel([
       tabel(),
-      tabel({ judul: 'Ringkasan Dimensi', kolom: ['Dimensi', 'Indeks'], baris: [['kemudahan', '81,0']] }),
+      tabel({
+        judul: 'Ringkasan Dimensi',
+        kolom: ['Dimensi', 'Indeks'],
+        baris: [['kemudahan', '81,0']],
+      }),
     ]);
     const buku = XLSX.read(isi, { type: 'array' });
     expect(buku.SheetNames).toEqual(['Rekap Gabungan', 'Ringkasan Dimensi']);

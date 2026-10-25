@@ -11,7 +11,5 @@ export function hashPalsu(teks: string): string {
     a = Math.imul(a ^ kode, 0x01000193) >>> 0;
     b = Math.imul(b + kode * (i + 1), 0x85ebca6b) >>> 0;
   }
-  return (
-    a.toString(16).padStart(8, '0') + b.toString(16).padStart(8, '0')
-  ).padEnd(64, '0');
+  return (a.toString(16).padStart(8, '0') + b.toString(16).padStart(8, '0')).padEnd(64, '0');
 }

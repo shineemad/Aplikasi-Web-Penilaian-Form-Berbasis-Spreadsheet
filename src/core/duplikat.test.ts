@@ -41,7 +41,9 @@ describe('deteksiEmailKembar', () => {
   });
 
   it('mengurutkan konflik dari yang paling banyak muncul', () => {
-    const hasil = deteksiEmailKembar(baris(['a@x.com', 'b@x.com', 'b@x.com', 'b@x.com', 'a@x.com']));
+    const hasil = deteksiEmailKembar(
+      baris(['a@x.com', 'b@x.com', 'b@x.com', 'b@x.com', 'a@x.com']),
+    );
     expect(hasil[0]?.email).toBe('b@x.com');
     expect(hasil[0]?.jumlah).toBe(3);
   });

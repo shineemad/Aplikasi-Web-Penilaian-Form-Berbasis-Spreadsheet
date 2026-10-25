@@ -1,12 +1,6 @@
-import { normalisasiTeks } from "./normalisasi";
+import { normalisasiTeks } from './normalisasi';
 
-export type Peran =
-  | "email"
-  | "nama"
-  | "waktu"
-  | "meta"
-  | "pertanyaan"
-  | "belum-diputuskan";
+export type Peran = 'email' | 'nama' | 'waktu' | 'meta' | 'pertanyaan' | 'belum-diputuskan';
 
 export interface KolomBerperan {
   header: string;
@@ -15,7 +9,7 @@ export interface KolomBerperan {
   alasan: string;
 }
 
-export type PeranIdentitas = "email" | "nama" | "waktu";
+export type PeranIdentitas = 'email' | 'nama' | 'waktu';
 
 export interface PetaPeran {
   kolom: KolomBerperan[];
@@ -30,18 +24,18 @@ export interface PetaPeran {
 const PANJANG_MAKS_IDENTITAS = 30;
 
 const MENGANDUNG: Record<PeranIdentitas, string[]> = {
-  email: ["email", "surel"],
-  waktu: ["timestamp", "cap waktu", "stempel waktu"],
+  email: ['email', 'surel'],
+  waktu: ['timestamp', 'cap waktu', 'stempel waktu'],
   nama: [],
 };
 
 const PERSIS: Record<PeranIdentitas, string[]> = {
   email: [],
   waktu: [],
-  nama: ["name", "nama", "full name", "nama lengkap"],
+  nama: ['name', 'nama', 'full name', 'nama lengkap'],
 };
 
-const URUTAN: PeranIdentitas[] = ["email", "nama", "waktu"];
+const URUTAN: PeranIdentitas[] = ['email', 'nama', 'waktu'];
 
 function calonUntuk(peran: PeranIdentitas, header: string[]): string[] {
   const calon: string[] = [];
@@ -107,8 +101,8 @@ export function tebakPeranKolom(header: string[]): PetaPeran {
     if (sudah !== undefined) return sudah;
     return {
       header: asli,
-      peran: "belum-diputuskan" as const,
-      alasan: "Peran kolom ini tidak dapat disimpulkan dari nama header saja.",
+      peran: 'belum-diputuskan' as const,
+      alasan: 'Peran kolom ini tidak dapat disimpulkan dari nama header saja.',
     };
   });
 

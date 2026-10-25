@@ -1,9 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  hitungIndeksDimensi,
-  hitungIndeksKeseluruhan,
-  hitungNilaiResponden,
-} from './aggregator';
+import { hitungIndeksDimensi, hitungIndeksKeseluruhan, hitungNilaiResponden } from './aggregator';
 import type { Aturan, JawabanResponden, Skema } from './tipe';
 
 const LIKERT: Aturan = {
@@ -194,10 +190,7 @@ describe('hitungNilaiResponden dengan nilai manual', () => {
 
   it('mengembalikan nilai null bila seluruh butirnya menunggu penilaian', () => {
     // Aturan 2: belum dinilai bukan nol.
-    const hasil = hitungNilaiResponden(
-      responden('a', {}),
-      skemaDuaButir(MANUAL_10, RUBRIK_1_5),
-    );
+    const hasil = hitungNilaiResponden(responden('a', {}), skemaDuaButir(MANUAL_10, RUBRIK_1_5));
     expect(hasil.nilai).toBe(null);
     expect(hasil.butirMenunggu).toBe(2);
   });
@@ -346,7 +339,13 @@ describe('hitungIndeksDimensi', () => {
 
   it('memberi 20 persen bila seluruh jawaban minimum', () => {
     const hasil = hitungIndeksDimensi(
-      [responden('a', { q1: 'Strongly disagree', q2: 'Strongly disagree', q3: 'Strongly disagree' })],
+      [
+        responden('a', {
+          q1: 'Strongly disagree',
+          q2: 'Strongly disagree',
+          q3: 'Strongly disagree',
+        }),
+      ],
       skemaLikert('abaikan'),
     );
     expect(hasil[0]?.indeks).toBeCloseTo(20, 10);

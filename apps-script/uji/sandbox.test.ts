@@ -192,7 +192,11 @@ describe('penjaga append-only pada sheet Penilaian palsu', () => {
     // Batasan Global 17 menyebut empat operasi. Menjaga satu saja meninggalkan
     // tiga jalan lain untuk menghapus nilai tanpa membuat uji merah.
     const ss = buat();
-    expect(() => sheetWajib(ss, 'Penilaian').getRange(1, 1).setValues([['x']])).toThrow(/append-only/i);
+    expect(() =>
+      sheetWajib(ss, 'Penilaian')
+        .getRange(1, 1)
+        .setValues([['x']]),
+    ).toThrow(/append-only/i);
     expect(() => sheetWajib(ss, 'Penilaian').getRange(1, 1).clear()).toThrow(/append-only/i);
     expect(() => sheetWajib(ss, 'Penilaian').deleteRow(1)).toThrow(/append-only/i);
     expect(() => sheetWajib(ss, 'Penilaian').clear()).toThrow(/append-only/i);
@@ -224,7 +228,7 @@ describe('spreadsheet palsu mengikuti bentuk API Google', () => {
     expect(ss.getSheets().map((satu) => satu.getName())).toEqual(['Sesi']);
   });
 
-  it('mengembalikan [[\'\']] untuk sheet kosong, bukan larik kosong', () => {
+  it("mengembalikan [['']] untuk sheet kosong, bukan larik kosong", () => {
     // Sheet Google selalu punya minimal satu sel. Palsu yang mengembalikan []
     // membuat `if (getDataRange().getValues().length === 0) appendRow(KEPALA)`
     // hijau di sini padahal kepala kolom tidak pernah ditulis di Google.
@@ -254,16 +258,7 @@ describe('spreadsheet palsu mengikuti bentuk API Google', () => {
     // penilaian_id numerik. Menyimpan '3' sebagai teks memutus keduanya.
     const sheet = buatSpreadsheetPalsu({}).insertSheet('Penilaian');
     sheet.appendRow(['3', ' 80 ', '1e3', null, undefined, '', 'K1', '0x10']);
-    expect(sheet.getDataRange().getValues()[0]).toEqual([
-      3,
-      80,
-      1000,
-      '',
-      '',
-      '',
-      'K1',
-      '0x10',
-    ]);
+    expect(sheet.getDataRange().getValues()[0]).toEqual([3, 80, 1000, '', '', '', 'K1', '0x10']);
   });
 
   it('mengubah hash berangka menjadi angka, persis seperti Sheets', () => {
@@ -278,12 +273,7 @@ describe('spreadsheet palsu mengikuti bentuk API Google', () => {
   it('menyimpan sel berawalan apostrof sebagai teks tanpa apostrofnya', () => {
     const sheet = buatSpreadsheetPalsu({}).insertSheet('Penilaian');
     sheet.appendRow(["'0012345678901234", "'80", "'", "'=Sesi!H2"]);
-    expect(sheet.getDataRange().getValues()[0]).toEqual([
-      '0012345678901234',
-      '80',
-      '',
-      '=Sesi!H2',
-    ]);
+    expect(sheet.getDataRange().getValues()[0]).toEqual(['0012345678901234', '80', '', '=Sesi!H2']);
   });
 
   it('menandai sel berawalan sama dengan sebagai rumus, bukan sebagai teks', () => {
@@ -384,7 +374,12 @@ describe('SpreadsheetApp palsu menyediakan flush', () => {
     const app = buatSpreadsheetAppPalsu(buatSpreadsheetPalsu({ Sesi: SESI_BAWAAN }), jejak);
     app.flush();
     expect(jejak).toEqual(['flush']);
-    expect(app.getActive().getSheets().map((satu) => satu.getName())).toEqual(['Sesi']);
+    expect(
+      app
+        .getActive()
+        .getSheets()
+        .map((satu) => satu.getName()),
+    ).toEqual(['Sesi']);
   });
 });
 

@@ -138,7 +138,11 @@ describe('bangunNilaiSesi', () => {
   it('membuat pemadatan baris-baris tanpa email terlihat', () => {
     const idKosong = idResponden('', hashPalsu);
     const ani = { ...responden(idKosong, { q1: 'Agree', q2: 'Agree' }), email: '', nama: 'Ani' };
-    const budi = { ...responden(idKosong, { q1: 'Neutral', q2: 'Neutral' }), email: '  ', nama: 'Budi' };
+    const budi = {
+      ...responden(idKosong, { q1: 'Neutral', q2: 'Neutral' }),
+      email: '  ',
+      nama: 'Budi',
+    };
     expect(idResponden('  ', hashPalsu)).toBe(idKosong);
 
     const sesi = bangunNilaiSesi(META, [ani, budi], SKEMA);

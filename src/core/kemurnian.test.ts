@@ -83,8 +83,7 @@ describe('kemurnian src/core', () => {
 });
 
 describe('pola penjaga itu sendiri', () => {
-  const kenaTerlarang = (isi: string): boolean =>
-    TERLARANG.some(({ pola }) => pola.test(isi));
+  const kenaTerlarang = (isi: string): boolean => TERLARANG.some(({ pola }) => pola.test(isi));
 
   const spesifierDari = (isi: string): string[] =>
     POLA_SPESIFIER.flatMap((pola) =>

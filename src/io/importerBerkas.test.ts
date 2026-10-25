@@ -109,14 +109,8 @@ describe('bacaBerkas', () => {
   });
 
   it('membaca lembar pertama bila buku kerja punya beberapa lembar', () => {
-    const lembar1 = XLSX.utils.aoa_to_sheet([
-      ['Email'],
-      ['a@x.com'],
-    ]);
-    const lembar2 = XLSX.utils.aoa_to_sheet([
-      ['Lain'],
-      ['abaikan'],
-    ]);
+    const lembar1 = XLSX.utils.aoa_to_sheet([['Email'], ['a@x.com']]);
+    const lembar2 = XLSX.utils.aoa_to_sheet([['Lain'], ['abaikan']]);
     const buku = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(buku, lembar1, 'Utama');
     XLSX.utils.book_append_sheet(buku, lembar2, 'Cadangan');
@@ -158,7 +152,12 @@ describe('bacaBerkas — isi csv tidak boleh berubah', () => {
 
   it('menolak csv yang bukan UTF-8 alih-alih menebak hurufnya', () => {
     // "Peña" dalam Windows-1252: ñ = 0xF1, bukan urutan UTF-8 yang sah.
-    const byte = new Uint8Array([...new TextEncoder().encode('Email,Name\na@x.com,Pe'), 0xf1, 0x61, 0x0a]);
+    const byte = new Uint8Array([
+      ...new TextEncoder().encode('Email,Name\na@x.com,Pe'),
+      0xf1,
+      0x61,
+      0x0a,
+    ]);
     const hasil = bacaBerkas(byte.buffer, 'data.csv');
     expect(hasil.status).toBe('gagal');
     if (hasil.status === 'gagal') {
@@ -187,7 +186,12 @@ describe('bacaBerkas — nomor baris asal', () => {
   });
 
   it('menunjuk baris yang benar meski ada baris kosong di tengah xlsx', () => {
-    const lembar = XLSX.utils.aoa_to_sheet([['Email', 'q1'], ['a@x.com', 'x'], [], ['b@x.com', 'y']]);
+    const lembar = XLSX.utils.aoa_to_sheet([
+      ['Email', 'q1'],
+      ['a@x.com', 'x'],
+      [],
+      ['b@x.com', 'y'],
+    ]);
     const buku = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(buku, lembar, 'Sheet1');
     const isi = XLSX.write(buku, { type: 'array', bookType: 'xlsx' }) as ArrayBuffer;
@@ -208,7 +212,10 @@ describe('bacaBerkas — nomor baris asal', () => {
 
 describe('bacaBerkas — nama kolom yang berbahaya', () => {
   it('menyimpan kolom bernama __proto__, constructor, dan toString sebagai teks biasa', () => {
-    const hasil = bacaBerkas(csv('Email,__proto__,constructor,toString\na@x.com,satu,dua,tiga\n'), 'data.csv');
+    const hasil = bacaBerkas(
+      csv('Email,__proto__,constructor,toString\na@x.com,satu,dua,tiga\n'),
+      'data.csv',
+    );
     if (hasil.status !== 'berhasil') throw new Error('seharusnya berhasil');
 
     const baris = hasil.baris[0];

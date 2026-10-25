@@ -58,10 +58,7 @@ export interface RingkasanProyek {
   rataSelisih: number | null;
 }
 
-export function gabungkanSesi(
-  daftarSesi: NilaiSesi[],
-  pembanding?: Pembanding,
-): HasilGabungan {
+export function gabungkanSesi(daftarSesi: NilaiSesi[], pembanding?: Pembanding): HasilGabungan {
   const peringatan: string[] = [];
 
   if (pembanding !== undefined) {
@@ -120,8 +117,7 @@ export function gabungkanSesi(
       nilaiPerSesi[s.sesiId] = nilai === undefined ? null : nilai;
 
       const jumlahKurang = s.kurang.get(id);
-      statusPerSesi[s.sesiId] =
-        jumlahKurang === undefined ? 'ikut' : `ikut:kurang ${jumlahKurang}`;
+      statusPerSesi[s.sesiId] = jumlahKurang === undefined ? 'ikut' : `ikut:kurang ${jumlahKurang}`;
 
       if (!identitasTerisi) {
         const data = s.identitas.get(id);
@@ -166,10 +162,7 @@ export function gabungkanSesi(
   };
 }
 
-export function ringkasProyek(
-  hasil: HasilGabungan,
-  daftarSesi: NilaiSesi[],
-): RingkasanProyek {
+export function ringkasProyek(hasil: HasilGabungan, daftarSesi: NilaiSesi[]): RingkasanProyek {
   const perSesi = daftarSesi.map((s) => {
     const angka: number[] = [];
     for (const nilai of s.nilai.values()) {

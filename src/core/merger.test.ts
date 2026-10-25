@@ -157,7 +157,9 @@ describe('gabungkanSesi', () => {
     });
 
     const { baris } = gabungkanSesi([preBudi, postBudi], PEMBANDING);
-    expect(baris[0]?.peringatanPerSesi['s1']).toEqual(['Butir 1: Opsi "Maybe" tidak ada di peta skala.']);
+    expect(baris[0]?.peringatanPerSesi['s1']).toEqual([
+      'Butir 1: Opsi "Maybe" tidak ada di peta skala.',
+    ]);
     expect(baris[0]?.peringatanPerSesi['s2']).toEqual([]);
   });
 

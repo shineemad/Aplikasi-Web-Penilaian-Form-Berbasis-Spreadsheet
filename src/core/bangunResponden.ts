@@ -1,7 +1,7 @@
-import { idResponden, normalisasiEmail } from "./normalisasi";
-import type { PetaPeran } from "./peranKolom";
-import type { RespondenSesi } from "./sesi";
-import type { FungsiHash, Skema } from "./tipe";
+import { idResponden, normalisasiEmail } from './normalisasi';
+import type { PetaPeran } from './peranKolom';
+import type { RespondenSesi } from './sesi';
+import type { FungsiHash, Skema } from './tipe';
 
 export interface HasilPemetaan {
   responden: RespondenSesi[];
@@ -36,10 +36,10 @@ export function bangunResponden(
   const kolomMeta: string[] = [];
 
   for (const kolom of peran.kolom) {
-    if (kolom.peran === "email") kolomEmail = kolom.header;
-    else if (kolom.peran === "nama") kolomNama = kolom.header;
-    else if (kolom.peran === "waktu") kolomWaktu = kolom.header;
-    else if (kolom.peran === "meta") kolomMeta.push(kolom.header);
+    if (kolom.peran === 'email') kolomEmail = kolom.header;
+    else if (kolom.peran === 'nama') kolomNama = kolom.header;
+    else if (kolom.peran === 'waktu') kolomWaktu = kolom.header;
+    else if (kolom.peran === 'meta') kolomMeta.push(kolom.header);
   }
 
   if (kolomEmail === undefined) {
@@ -61,11 +61,9 @@ export function bangunResponden(
     if (satu === undefined) continue;
 
     const emailMentah = satu[kolomEmail];
-    const email = normalisasiEmail(
-      emailMentah === undefined ? "" : emailMentah,
-    );
+    const email = normalisasiEmail(emailMentah === undefined ? '' : emailMentah);
 
-    if (email === "") {
+    if (email === '') {
       // nomorBaris[i] tidak pernah undefined di sini karena panjang keduanya
       // sudah diperiksa sama di atas; pagar ini hanya untuk noUncheckedIndexedAccess.
       const nomor = nomorBaris[i];
@@ -77,7 +75,7 @@ export function bangunResponden(
     let nama: string | null = null;
     if (kolomNama !== undefined) {
       const isi = satu[kolomNama];
-      if (isi !== undefined && isi.trim() !== "") nama = isi.trim();
+      if (isi !== undefined && isi.trim() !== '') nama = isi.trim();
     }
 
     const meta: Record<string, string> = {};
@@ -95,7 +93,7 @@ export function bangunResponden(
     let waktu: string | null = null;
     if (kolomWaktu !== undefined) {
       const isi = satu[kolomWaktu];
-      if (isi !== undefined && isi.trim() !== "") waktu = isi.trim();
+      if (isi !== undefined && isi.trim() !== '') waktu = isi.trim();
     }
 
     responden.push({ id, email, nama, jawaban, meta });

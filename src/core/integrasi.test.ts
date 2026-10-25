@@ -1,9 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  hitungIndeksDimensi,
-  hitungIndeksKeseluruhan,
-  hitungNilaiResponden,
-} from './aggregator';
+import { hitungIndeksDimensi, hitungIndeksKeseluruhan, hitungNilaiResponden } from './aggregator';
 import { deteksiEmailKosong } from './duplikat';
 import { gabungkanSesi, ringkasProyek } from './merger';
 import type { NilaiSesi } from './merger';
@@ -13,7 +9,11 @@ import { jawabanSeragam, skemaPostTest } from './__fixtures__/postTest';
 import { hashPalsu } from './__fixtures__/hash';
 import type { JawabanResponden } from './tipe';
 
-function buatResponden(email: string, nama: string | null, jawaban: Record<string, string>): JawabanResponden {
+function buatResponden(
+  email: string,
+  nama: string | null,
+  jawaban: Record<string, string>,
+): JawabanResponden {
   return { id: idResponden(email, hashPalsu), email, nama, jawaban };
 }
 
@@ -89,7 +89,11 @@ describe('instrumen Post-Test nyata', () => {
     for (let i = 0; i < 500; i += 1) {
       const pilihan = opsi[i % opsi.length];
       semua.push(
-        buatResponden(`peserta${i}@example.com`, i % 7 === 0 ? null : `Peserta ${i}`, jawabanSeragam(pilihan === undefined ? 'Agree' : pilihan)),
+        buatResponden(
+          `peserta${i}@example.com`,
+          i % 7 === 0 ? null : `Peserta ${i}`,
+          jawabanSeragam(pilihan === undefined ? 'Agree' : pilihan),
+        ),
       );
     }
 

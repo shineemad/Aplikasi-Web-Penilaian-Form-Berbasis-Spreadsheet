@@ -97,10 +97,7 @@ describe('periksaSkema menolak skema yang cacat', () => {
   });
 
   it('menolak bobot nol atau negatif', () => {
-    const hasil = periksaSkema(
-      skema([{ ...BUTIR_LIKERT, bobot: 0 }]),
-      baris([{ q1: 'Agree' }]),
-    );
+    const hasil = periksaSkema(skema([{ ...BUTIR_LIKERT, bobot: 0 }]), baris([{ q1: 'Agree' }]));
     expect(hasil.bolehDisimpan).toBe(false);
     expect(hasil.masalah.map((m) => m.jenis)).toContain('bobot-tidak-positif');
   });

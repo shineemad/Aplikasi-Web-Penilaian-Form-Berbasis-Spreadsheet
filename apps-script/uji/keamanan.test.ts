@@ -499,7 +499,11 @@ describe('urutan pemeriksaan izin', () => {
   });
 
   it('menolak sesi yang tidak ada sebelum menimbang peran', () => {
-    const { balasan } = panggil({ email: 'admin@kampus.id', aksi: 'ubahSkema', sesiIdDikirim: 'S9' });
+    const { balasan } = panggil({
+      email: 'admin@kampus.id',
+      aksi: 'ubahSkema',
+      sesiIdDikirim: 'S9',
+    });
     expect(balasan.kode).toBe('SESI_TIDAK_ADA');
     expect(balasan.pesan).toContain('S9');
   });

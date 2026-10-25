@@ -3,7 +3,7 @@ import type { TabelTampil } from '../core/tabelTampil';
 import { tulisPdf } from './eksporPdf';
 
 const KEPALA = {
-  judul: 'Literasi Qur\'ani Ateneo de Davao 2026',
+  judul: "Literasi Qur'ani Ateneo de Davao 2026",
   // Tanggal = TENTANG kapan laporan ini (kepala), beda dari dibuatPada = KAPAN
   // berkas dibuat (catatan kaki). Sengaja dibuat berbeda tanggal di sini.
   tanggal: '27/09/2026',
@@ -57,7 +57,9 @@ describe('tulisPdf', () => {
 
   it('memecah 500 baris ke banyak halaman', () => {
     // Tabel panjang. Diuji sejak awal, bukan menjelang akhir.
-    const { berkas, jumlahHalaman } = tulisPdf([tabelSempit(500)], KEPALA, { kembalikanInfo: true });
+    const { berkas, jumlahHalaman } = tulisPdf([tabelSempit(500)], KEPALA, {
+      kembalikanInfo: true,
+    });
     expect(awalanPdf(berkas)).toBe('%PDF-');
     expect(jumlahHalaman).toBeGreaterThan(1);
   });

@@ -133,9 +133,9 @@ describe('bangunTabelGabungan', () => {
 
   it('menandai berapa kolom identitas yang harus diulang saat tabel dipecah', () => {
     expect(bangunTabelGabungan(hasil([baris({})]), OPSI).kolomIdentitas).toBe(3);
-    expect(
-      bangunTabelGabungan(hasil([baris({})]), { ...OPSI, anonim: true }).kolomIdentitas,
-    ).toBe(1);
+    expect(bangunTabelGabungan(hasil([baris({})]), { ...OPSI, anonim: true }).kolomIdentitas).toBe(
+      1,
+    );
   });
 
   it('melebar seiring bertambahnya sesi', () => {
@@ -269,11 +269,9 @@ describe('bentuk tabel dari pembangun sesungguhnya', () => {
     ['gabungan tanpa baris', bangunTabelGabungan(hasil([]), OPSI)],
     [
       'ringkasan dimensi',
-      bangunTabelRingkasan(
-        [{ dimensi: 'kemudahan', indeks: 80.996, pasanganDihitung: 100 }],
-        70,
-        { desimal: 1 },
-      ),
+      bangunTabelRingkasan([{ dimensi: 'kemudahan', indeks: 80.996, pasanganDihitung: 100 }], 70, {
+        desimal: 1,
+      }),
     ],
   ];
 

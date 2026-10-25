@@ -8,7 +8,8 @@ function ambilBerhasil(teks: string): FungsiAmbil {
   return async () => ({ ok: true, status: 200, teks: async () => teks });
 }
 
-const ambilGagal = (status: number): FungsiAmbil =>
+const ambilGagal =
+  (status: number): FungsiAmbil =>
   async () => ({ ok: false, status, teks: async () => '' });
 
 const ambilMelempar: FungsiAmbil = async () => {

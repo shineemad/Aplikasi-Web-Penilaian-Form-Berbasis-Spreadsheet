@@ -55,7 +55,11 @@ function siapkan(jumlahBaris: number) {
     final.skema,
     hashPalsu,
   );
-  const sesi = bangunNilaiSesi({ sesiId: 's1', namaSesi: 'Post-Test' }, petaan.responden, final.skema);
+  const sesi = bangunNilaiSesi(
+    { sesiId: 's1', namaSesi: 'Post-Test' },
+    petaan.responden,
+    final.skema,
+  );
   return { gabungan: gabungkanSesi([sesi]), responden: petaan.responden, skema: final.skema };
 }
 

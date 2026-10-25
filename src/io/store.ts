@@ -92,8 +92,7 @@ const PESAN_BALASAN_CACAT =
   'periksa apakah URL backend menunjuk deployment Apps Script yang benar dan bukan halaman login.';
 
 type Periksa =
-  | { sukses: true }
-  | { sukses: false; kode: string; pesan: string; sifat: SifatKegagalan };
+  { sukses: true } | { sukses: false; kode: string; pesan: string; sifat: SifatKegagalan };
 
 function bacaBalasan(balasan: unknown): Periksa {
   if (typeof balasan !== 'object' || balasan === null || Array.isArray(balasan)) {

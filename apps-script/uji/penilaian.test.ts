@@ -552,8 +552,16 @@ describe('sheet Penilaian yang cacat menolak, bukan menulis ke kolom yang keliru
 describe('spec §11.2 dan §13 butir 4 — dua penilai dari perangkat berbeda', () => {
   it('menyimpan kedua baris, yang terakhir berlaku', () => {
     const ss = buatRuangKerja();
-    simpan({ ss, email: 'penilai1@kampus.id', muatan: { respondenId: 'a1', kriteria: 'K1', nilai: 70 } });
-    simpan({ ss, email: 'penilai2@kampus.id', muatan: { respondenId: 'a1', kriteria: 'K1', nilai: 90 } });
+    simpan({
+      ss,
+      email: 'penilai1@kampus.id',
+      muatan: { respondenId: 'a1', kriteria: 'K1', nilai: 70 },
+    });
+    simpan({
+      ss,
+      email: 'penilai2@kampus.id',
+      muatan: { respondenId: 'a1', kriteria: 'K1', nilai: 90 },
+    });
     const baris = barisPenilaian(ss);
     expect(baris).toHaveLength(2);
     expect(baris.map((satu) => satu.oleh)).toEqual(['penilai1@kampus.id', 'penilai2@kampus.id']);
@@ -563,8 +571,16 @@ describe('spec §11.2 dan §13 butir 4 — dua penilai dari perangkat berbeda', 
 
   it('tidak menghapus pekerjaan penilai lain pada kriteria yang berbeda', () => {
     const ss = buatRuangKerja();
-    simpan({ ss, email: 'penilai1@kampus.id', muatan: { respondenId: 'a1', kriteria: 'K1', nilai: 70 } });
-    simpan({ ss, email: 'penilai2@kampus.id', muatan: { respondenId: 'a1', kriteria: 'K2', nilai: 90 } });
+    simpan({
+      ss,
+      email: 'penilai1@kampus.id',
+      muatan: { respondenId: 'a1', kriteria: 'K1', nilai: 70 },
+    });
+    simpan({
+      ss,
+      email: 'penilai2@kampus.id',
+      muatan: { respondenId: 'a1', kriteria: 'K2', nilai: 90 },
+    });
     expect(barisPenilaian(ss).map((satu) => satu.kriteria)).toEqual(['K1', 'K2']);
   });
 });
@@ -824,7 +840,16 @@ describe('kepala kolom dicocokkan setelah dinormalisasi (aturan 4 repo)', () => 
   it('menulis ke kolom yang kepalanya memuat spasi ganda di dalamnya', () => {
     const ss = buatRuangKerja({
       penilaian: [
-        ['penilaian_id', 'sesi_id', 'responden  id', 'kriteria', 'nilai', 'catatan', 'oleh', 'pada'],
+        [
+          'penilaian_id',
+          'sesi_id',
+          'responden  id',
+          'kriteria',
+          'nilai',
+          'catatan',
+          'oleh',
+          'pada',
+        ],
       ],
     });
     // "responden  id" bukan "responden_id"; merapatkan spasi tidak boleh

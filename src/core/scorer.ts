@@ -31,10 +31,7 @@ export function rentangNilaiManual(aturan: Aturan): { min: number; maks: number 
   }
 }
 
-export function skorJawaban(
-  jawaban: string | null | undefined,
-  aturan: Aturan,
-): HasilSkor {
+export function skorJawaban(jawaban: string | null | undefined, aturan: Aturan): HasilSkor {
   if (aturan.jenis === 'abaikan') return { status: 'diabaikan' };
   if (aturan.jenis === 'manual') return { status: 'butuh-manual' };
 

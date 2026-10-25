@@ -25,7 +25,8 @@ const PESAN_TAUTAN: PesanSumber = {
     'Lembar yang dipublikasikan lewat tautan ini hanya berisi baris nama kolom dan tidak berisi satu baris data pun. ' +
     'Periksa apakah tautan menunjuk lembar yang benar: Publikasikan ke web memilih satu lembar tertentu, ' +
     'bukan seluruh spreadsheet.',
-  ulangi: 'lalu muat ulang tautannya (perubahan pada lembar yang dipublikasikan bisa perlu beberapa menit untuk muncul)',
+  ulangi:
+    'lalu muat ulang tautannya (perubahan pada lembar yang dipublikasikan bisa perlu beberapa menit untuk muncul)',
 };
 
 export async function bacaTautan(url: string, ambil: FungsiAmbil): Promise<Impor> {
@@ -33,7 +34,10 @@ export async function bacaTautan(url: string, ambil: FungsiAmbil): Promise<Impor
   try {
     alamat = new URL(url);
   } catch {
-    return { status: 'gagal', pesan: `"${url}" bukan tautan yang sah. Tempelkan alamat lengkapnya, termasuk https://.` };
+    return {
+      status: 'gagal',
+      pesan: `"${url}" bukan tautan yang sah. Tempelkan alamat lengkapnya, termasuk https://.`,
+    };
   }
 
   if (alamat.protocol !== 'http:' && alamat.protocol !== 'https:') {
@@ -68,7 +72,11 @@ export async function bacaTautan(url: string, ambil: FungsiAmbil): Promise<Impor
 
   const bersih = teks.trim();
   if (bersih === '') {
-    return { status: 'gagal', pesan: 'Tautan berhasil dibuka tetapi isinya kosong. Periksa apakah lembarnya memang berisi data.' };
+    return {
+      status: 'gagal',
+      pesan:
+        'Tautan berhasil dibuka tetapi isinya kosong. Periksa apakah lembarnya memang berisi data.',
+    };
   }
 
   if (bersih.startsWith('<')) {
