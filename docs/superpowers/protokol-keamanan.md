@@ -79,14 +79,14 @@ Tiga sonde, dijalankan sebelum apa pun yang lain. Cara mengirimnya ada di §4.
 | --- | --- | --- | --- |
 | **A1** | Akun kedua | `{"aksi":"bacaRekap","sesiId":"UJI-LUAR","muatan":{}}` | Kode kesalahannya |
 | **A2** | Tanpa identitas (kirim **tanpa** header `Authorization`) | sama seperti A1 | Kode kesalahannya |
-| **A3** | Pemilik skrip | `{"aksi":"bacaRekap","sesiId":"UJI-JALAN","muatan":{}}` | Kode kesalahannya |
+| **A3** | Pemilik skrip | `{"aksi":"bacaRekap","sesiId":"UJI-JALAN","muatan":{}}` | `ok` dan `kode`-nya |
 
 Cara membaca hasilnya:
 
 - **A1 menjawab `ORANG_TIDAK_DIKENAL`** → Google **mengirimkan** identitas akun kedua. Pesan penolakannya berbunyi `Email <x> tidak terdaftar sebagai admin maupun penilai pada sesi "UJI-LUAR"`. **Salin `<x>` apa adanya ke tabel bukti** — itulah jawaban empiris atas pertanyaan "siapa yang sebenarnya dikembalikan `getActiveUser()`", dan itu yang dilaporkan ke pengguna untuk memutuskan C4.
 - **A1 menjawab `TANPA_IDENTITAS`** → Google **tidak** mengirimkan identitas pada setelan ini. Mode "Jalankan sebagai: Saya" dengan akun di luar domain adalah penyebab yang paling mungkin, tetapi **jangan mencatatnya sebagai sebab tanpa menguji setelan yang lain**. Ulangi A1 pada setelan alternatif dan catat kedua hasilnya.
 - **A2 lulus dengan salah satu dari dua hasil.** Pertama, permintaan **tidak sampai ke `doPost`** sama sekali — Google membalas halaman login HTML atau `401`/`403`. Itu justru tanda deployment non-anonim yang benar: penjagaannya berlapis di depan skrip. Kedua, balasannya `TANPA_IDENTITAS` dari backend. Yang menjadi **temuan serius** hanyalah bila permintaan tanpa identitas menembus sampai ke sebuah aksi dan dijawab sukses, atau dijawab dengan kode penolakan peran biasa seperti `ORANG_TIDAK_DIKENAL` — yang terakhir berarti salah setel deployment akan tersamar sebagai penolakan yang wajar dan tidak pernah tertangkap.
-- **A3 diharapkan menjawab `AKSI_BELUM_DIBANGUN`** — lihat §5; itu berarti izin **lolos**.
+- **A3 diharapkan menjawab `ok:true` dengan `kode:"REKAP"`** — lihat §5; itu berarti izin **lolos**. Balasan `AKSI_BELUM_DIBANGUN` di sini berarti Anda menguji deployment versi lama, sebelum `bacaRekap` dibangun; perbarui deployment-nya sebelum melanjutkan.
 
 > **C4 tidak diputuskan di sini.** Protokol ini hanya menghasilkan angka dan kode yang dilaporkan ke pengguna. Pertanyaan yang harus dijawab pengguna setelah tabel bukti terisi: apakah institusi punya Google Workspace, dan apakah **seluruh** penilai serta pengamat punya akun di domain itu? Bila tidak — klausul §9.2 yang mana yang ditulis ulang, sumber identitasnya atau larangan berbagi Spreadsheet?
 
@@ -159,10 +159,14 @@ Empat penolakan tidak membuktikan apa pun bila deployment-nya menolak segala ses
 
 | Kode | Akun | Badan permintaan | Balasan yang diharapkan |
 | --- | --- | --- | --- |
-| **C1** | Pemilik (admin `UJI-JALAN`) | `{"aksi":"bacaRekap","sesiId":"UJI-JALAN","muatan":{}}` | `ok:false`, `kode:"AKSI_BELUM_DIBANGUN"` |
+| **C1** | Pemilik (admin `UJI-JALAN`) | `{"aksi":"bacaRekap","sesiId":"UJI-JALAN","muatan":{}}` | `ok:true`, `kode:"REKAP"` |
 | **C2** | Akun kedua (penilai `UJI-JALAN`) | `{"aksi":"simpanPenilaian","sesiId":"UJI-JALAN","muatan":{"respondenId":"0a1b2c3d4e5f6071","kriteria":"q1","nilai":4}}` | `ok:true`, `kode:"TERSIMPAN"`, memuat `penilaianId` |
 
-**C1 sengaja berbalas `ok:false`.** `bacaRekap` memang belum punya penanganan di backend; yang dibuktikan C1 adalah bahwa permintaannya **melewati seluruh kebijakan izin** dan berhenti di titik sambung. Kode `AKSI_BELUM_DIBANGUN` hanya dapat dicapai setelah identitas terbaca, sesi ditemukan, orangnya dikenal, dan perannya cukup. Bila C1 menjawab `TANPA_IDENTITAS`, `SESI_TIDAK_ADA`, atau `SESI_CACAT`, **hentikan protokol dan perbaiki prasyaratnya** — empat uji di §6 tidak akan berarti apa-apa.
+**C1 membuktikan permintaan melewati SELURUH kebijakan izin.** Kode `REKAP` hanya dapat dicapai setelah identitas terbaca, sesi ditemukan, orangnya dikenal, dan perannya cukup. Bila C1 menjawab `TANPA_IDENTITAS`, `SESI_TIDAK_ADA`, atau `SESI_CACAT`, **hentikan protokol dan perbaiki prasyaratnya** — empat uji di §6 tidak akan berarti apa-apa.
+
+Dua balasan lain yang bukan kegagalan keamanan tetapi tetap menghentikan protokol: `REKAP_CACAT` berarti sheet ruang kerjanya belum beres (jalankan penyiapan ulang), dan `AKSI_BELUM_DIBANGUN` berarti deployment yang diuji lebih tua daripada kode ini.
+
+> Catatan riwayat: kontrol ini dulu memakai `AKSI_BELUM_DIBANGUN` sebagai jawaban yang diharapkan, karena `bacaRekap` memang belum punya penanganan. Sejak aksi itu dibangun, harapan lama akan membuat operator menyimpulkan deployment-nya rusak justru ketika ia benar.
 
 **Setelah C2, buka sheet `Penilaian` dan periksa dengan mata:**
 
