@@ -1,0 +1,13 @@
+node_modules
+package-lock.json
+
+# Berkas yang di-deploy ke Apps Script. Sensor di apps-script/uji/ memeriksa
+# TEKS-nya (sintaks modul, teks `import(`, nama fungsi tingkat atas), jadi
+# pemformatan ulang di sini bisa membuat penjaga merah tanpa ada yang salah.
+apps-script/Kode.gs
+
+# Prosa dan buku catatan. Prettier merapikan ulang tabel Markdown, dan itu
+# yang dulu membuat suntingan ledger meleset.
+docs
+.superpowers
+.github
