@@ -747,6 +747,31 @@ function bacaSkemaMentah(kisi: unknown[][]): HasilAdaptor<SatuBarisSkema> {
 type Tafsir = { ok: true; aturan: Aturan } | { ok: false; pesan: string };
 
 /**
+ * Kebalikan `tafsirkanAturan`: satu `Aturan` menjadi isi sel `parameter`.
+ *
+ * Tanpa penulis, bentuk sel itu hanya didefinisikan oleh pengurainya, dan
+ * setiap pemanggil yang kelak menulis `Skema` ke sheet harus menebaknya.
+ * Tebakan yang paling mudah — `JSON.stringify(aturan)` — juga yang paling
+ * salah: tipe core memakai `kunci` sementara sheet memakai `benar` (§7.1),
+ * sehingga skema yang ditulis begitu akan **batal seluruhnya** saat dibaca
+ * kembali, dan kegagalannya baru terlihat pada rekap berikutnya.
+ */
+export function tulisParameter(aturan: Aturan): string {
+  switch (aturan.jenis) {
+    // §7.1 tidak memberi `abaikan` parameter sama sekali, dan `tafsirkanAturan`
+    // memang tidak membacanya. Sel kosong adalah satu-satunya bentuk yang jujur.
+    case 'abaikan':
+      return '';
+    case 'peta-opsi':
+      return JSON.stringify({ peta: aturan.peta, skorMaks: aturan.skorMaks });
+    case 'kunci-jawaban':
+      return JSON.stringify({ benar: aturan.kunci });
+    case 'manual':
+      return JSON.stringify({ min: aturan.min, maks: aturan.maks });
+  }
+}
+
+/**
  * `parameter` adalah satu-satunya sumber kebenaran bentuk aturan (koreksi D8).
  *
  * Tak satu pun cabang menebak: parameter yang kosong, cacat, bukan objek, atau

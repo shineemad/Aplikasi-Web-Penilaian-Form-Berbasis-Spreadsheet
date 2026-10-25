@@ -1,7 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import type { RespondenSesi } from '../core/sesi';
-import type { Skema } from '../core/tipe';
-import { bacaPenilaian, bacaProyek, bacaResponden, bacaSesi, bacaSkema } from './adaptorSheet';
+import type { Aturan, Skema } from '../core/tipe';
+import {
+  bacaPenilaian,
+  bacaProyek,
+  bacaResponden,
+  bacaSesi,
+  bacaSkema,
+  tulisParameter,
+} from './adaptorSheet';
 
 // Kepala kolom disalin dari KEPALA_RUANG_KERJA di apps-script/Kode.gs, bukan
 // dari ingatan: satu nama yang salah eja membuat adaptor membaca kolom yang
@@ -1292,5 +1299,140 @@ describe('bacaSkema', () => {
       aturan: { jenis: 'manual', min: 0, maks: 10 },
       bobot: 1,
     });
+  });
+
+  it('menandai kolom_asal yang kosong, yang tidak menunjuk kolom jawaban mana pun', () => {
+    const hasil = bacaSkema([
+      KEPALA_SKEMA,
+      ['s1', '', 'Kepuasan', 'd', 'manual', '{"min":0,"maks":10}', '', 1, 'nol'],
+    ]);
+
+    expect(hasil.baris).toEqual([]);
+    expect(hasil.masalah[0]?.nomorBaris).toBe(2);
+    expect(hasil.masalah[0]?.pesan).toMatch(/kolom_asal/);
+    expect(hasil.masalah[0]?.skemaId).toBe('s1');
+  });
+
+  it('membedakan skor_maks bernilai nol dari skor_maks yang kosong', () => {
+    // Nol adalah angka yang ditulis admin dan berselisih dengan parameter;
+    // kosong adalah angka yang belum ditulis. Menyamakannya mendiamkan D8.
+    // Peta sengaja mencapai skorMaks supaya peringatan "opsi tertinggi di bawah
+    // skor maksimum" tidak ikut menyala dan mengaburkan yang sedang diuji.
+    const nol = bacaSkema([
+      KEPALA_SKEMA,
+      ['s1', 'Q1', 'Q1', 'd', 'peta-opsi', '{"peta":{"agree":5},"skorMaks":5}', 0, 1, 'nol'],
+    ]);
+    expect(nol.baris).toHaveLength(1);
+    expect(nol.masalah).toHaveLength(1);
+    expect(nol.masalah[0]?.jenis).toBe('peringatan');
+    expect(nol.masalah[0]?.pesan).toMatch(/skor_maks/);
+
+    const kosong = bacaSkema([
+      KEPALA_SKEMA,
+      ['s1', 'Q1', 'Q1', 'd', 'peta-opsi', '{"peta":{"agree":5},"skorMaks":5}', '', 1, 'nol'],
+    ]);
+    expect(kosong.masalah).toEqual([]);
+  });
+
+  it('menolak peta-opsi tanpa skorMaks, tidak menurunkannya dari nilai tertinggi peta', () => {
+    // usulAturan.ts menolak menurunkan skorMaks dari data justru karena skala
+    // yang sengaja tidak penuh adalah rancangan yang sah. Menurunkannya di
+    // sini membuat setiap responden tampak mencapai nilai penuh.
+    const hasil = bacaSkema([
+      KEPALA_SKEMA,
+      ['s1', 'Q1', 'Q1', 'd', 'peta-opsi', '{"peta":{"agree":4,"setuju":3}}', '', 1, 'nol'],
+    ]);
+
+    expect(hasil.baris).toEqual([]);
+    expect(hasil.masalah[0]?.pesan).toMatch(/skorMaks/);
+  });
+
+  it('menolak skorMaks dan bobot yang bukan angka menurut Sheets', () => {
+    // Number('0x10') bernilai 16 dan Number('Infinity') tak terhingga; Sheets
+    // tidak memperlakukan keduanya sebagai angka, dan menerimanya di sini
+    // membuat penyebut nilai menjadi sesuatu yang tidak pernah diketik siapa pun.
+    const skorMaks = bacaSkema([
+      KEPALA_SKEMA,
+      ['s1', 'Q1', 'Q1', 'd', 'peta-opsi', '{"peta":{"agree":4},"skorMaks":"0x10"}', '', 1, 'nol'],
+    ]);
+    expect(skorMaks.baris).toEqual([]);
+    expect(skorMaks.masalah[0]?.pesan).toMatch(/skorMaks/);
+
+    const bobot = bacaSkema([
+      KEPALA_SKEMA,
+      ['s1', 'Q1', 'Q1', 'd', 'manual', '{"min":0,"maks":10}', '', '0x10', 'nol'],
+      ['s2', 'Q1', 'Q1', 'd', 'manual', '{"min":0,"maks":10}', '', 'Infinity', 'nol'],
+    ]);
+    expect(bobot.baris).toEqual([]);
+    expect(bobot.masalah.map((satu) => satu.nomorBaris)).toEqual([2, 2, 3, 3]);
+    expect(bobot.masalah[0]?.pesan).toMatch(/bobot/);
+    expect(bobot.masalah[2]?.pesan).toMatch(/bobot/);
+  });
+
+  it('menolak skor_maks bertuliskan Infinity sebagai pembanding, tanpa menjatuhkan butirnya', () => {
+    // Petanya mencapai skorMaks supaya yang tersisa hanya keluhan tentang sel
+    // pembandingnya sendiri.
+    const hasil = bacaSkema([
+      KEPALA_SKEMA,
+      [
+        's1',
+        'Q1',
+        'Q1',
+        'd',
+        'peta-opsi',
+        '{"peta":{"agree":5},"skorMaks":5}',
+        'Infinity',
+        1,
+        'nol',
+      ],
+    ]);
+
+    expect(hasil.baris).toHaveLength(1);
+    expect(hasil.masalah).toHaveLength(1);
+    expect(hasil.masalah[0]?.jenis).toBe('peringatan');
+    expect(hasil.masalah[0]?.pesan).toMatch(/Infinity/);
+  });
+});
+
+describe('tulisParameter', () => {
+  // Tanpa penulis, bentuk sel `parameter` hanya didefinisikan oleh pengurainya,
+  // dan setiap modul yang kelak menulis Skema ke sheet harus menebaknya.
+  const SEMUA_ATURAN: Aturan[] = [
+    { jenis: 'peta-opsi', peta: { agree: 4, 'strongly agree': 5 }, skorMaks: 5 },
+    { jenis: 'kunci-jawaban', kunci: 'B' },
+    { jenis: 'manual', min: 0, maks: 100 },
+    { jenis: 'abaikan' },
+  ];
+
+  function barisSkema(aturan: Aturan): unknown[] {
+    return ['s1', 'Q1', 'Kepuasan', 'd', aturan.jenis, tulisParameter(aturan), '', 1, 'nol'];
+  }
+
+  for (const aturan of SEMUA_ATURAN) {
+    it(`bolak-balik tanpa berubah untuk aturan ${aturan.jenis}`, () => {
+      const hasil = bacaSkema([KEPALA_SKEMA, barisSkema(aturan)]);
+
+      expect(hasil.masalah).toEqual([]);
+      expect(hasil.baris[0]?.butir[0]?.aturan).toEqual(aturan);
+    });
+  }
+
+  it('menulis kunci-jawaban sebagai "benar", bukan "kunci" seperti tipe core', () => {
+    // Jebakan yang membuat JSON.stringify(aturan) tampak cukup: §7.1 memakai
+    // "benar", sehingga skema yang ditulis begitu batal SELURUHNYA saat dibaca
+    // lagi — dan baru terlihat pada rekap berikutnya.
+    const aturan: Aturan = { jenis: 'kunci-jawaban', kunci: 'B' };
+    expect(tulisParameter(aturan)).toBe('{"benar":"B"}');
+
+    const naif = bacaSkema([
+      KEPALA_SKEMA,
+      ['s1', 'Q1', 'Q1', 'd', 'kunci-jawaban', JSON.stringify(aturan), '', 1, 'nol'],
+    ]);
+    expect(naif.baris).toEqual([]);
+    expect(naif.masalah[0]?.pesan).toMatch(/benar/);
+  });
+
+  it('menulis sel kosong untuk abaikan, karena §7.1 tidak memberinya parameter', () => {
+    expect(tulisParameter({ jenis: 'abaikan' })).toBe('');
   });
 });
