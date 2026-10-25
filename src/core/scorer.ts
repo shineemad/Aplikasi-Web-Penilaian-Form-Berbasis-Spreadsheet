@@ -1,6 +1,20 @@
 import { normalisasiTeks } from './normalisasi';
 import type { Aturan, HasilSkor } from './tipe';
 
+/**
+ * `Record` mewarisi Object.prototype, sehingga `jawaban['toString']` milik
+ * responden yang tidak mengisinya mengembalikan fungsi bawaan — dan setiap
+ * pemanggil lalu melempar `TypeError` alih-alih membaca sel kosong. `kolom_asal`
+ * diketik admin ke dalam sheet, jadi nama yang kebetulan bentrok adalah
+ * masukan yang wajar, bukan keadaan mustahil.
+ */
+export function jawabanKolom(
+  jawaban: Record<string, string>,
+  kolomAsal: string,
+): string | undefined {
+  return Object.hasOwn(jawaban, kolomAsal) ? jawaban[kolomAsal] : undefined;
+}
+
 export function skorMaksAturan(aturan: Aturan): number | null {
   switch (aturan.jenis) {
     case 'peta-opsi':

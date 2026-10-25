@@ -23,6 +23,14 @@ function responden(jawaban: Record<string, string>): JawabanResponden {
 const TIGA_LIKERT = skema([butir('q1', LIKERT), butir('q2', LIKERT), butir('q3', LIKERT)]);
 
 describe('hitungKelengkapan', () => {
+  it('menghitung kolom bernama toString sebagai kosong, bukan melempar', () => {
+    // `Record` mewarisi Object.prototype: jawaban['toString'] adalah fungsi
+    // bawaan, dan normalisasiTeks melempar TypeError bila ia diteruskan.
+    expect(
+      hitungKelengkapan(responden({ q1: 'Agree' }), skema([butir('toString', LIKERT)])),
+    ).toEqual({ status: 'kosong' });
+  });
+
   it('menyebut lengkap bila seluruh kolom terisi', () => {
     expect(
       hitungKelengkapan(responden({ q1: 'Agree', q2: 'Neutral', q3: 'Agree' }), TIGA_LIKERT),

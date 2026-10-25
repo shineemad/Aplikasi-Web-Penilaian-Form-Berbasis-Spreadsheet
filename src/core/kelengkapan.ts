@@ -1,4 +1,5 @@
 import { normalisasiTeks } from './normalisasi';
+import { jawabanKolom } from './scorer';
 import type { ButirSkema, JawabanResponden, Skema } from './tipe';
 
 export type Kelengkapan =
@@ -17,7 +18,7 @@ export function hitungKelengkapan(responden: JawabanResponden, skema: Skema): Ke
     if (!diisiResponden(butir)) continue;
 
     diminta += 1;
-    const jawaban = responden.jawaban[butir.kolomAsal];
+    const jawaban = jawabanKolom(responden.jawaban, butir.kolomAsal);
     if (jawaban === undefined || normalisasiTeks(jawaban) === '') kosong += 1;
   }
 

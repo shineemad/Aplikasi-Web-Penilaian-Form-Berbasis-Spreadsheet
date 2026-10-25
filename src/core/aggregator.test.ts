@@ -87,6 +87,24 @@ function skemaDuaButir(
 }
 
 describe('hitungNilaiResponden', () => {
+  it('memperlakukan kolom bernama toString sebagai kosong, bukan melempar', () => {
+    // `Record` mewarisi Object.prototype, jadi jawaban['toString'] adalah
+    // fungsi bawaan. Tanpa penjaga, satu `kolom_asal` yang kebetulan bernama
+    // begitu membuat seluruh rekap gagal dengan TypeError.
+    const skema: Skema = {
+      skemaId: 'uji',
+      perlakuanKosong: 'abaikan',
+      butir: [
+        { kolomAsal: 'q1', label: 'Butir 1', dimensi: 'd', aturan: LIKERT, bobot: 1 },
+        { kolomAsal: 'toString', label: 'Bentrok', dimensi: 'd', aturan: LIKERT, bobot: 1 },
+      ],
+    };
+
+    const hasil = hitungNilaiResponden(responden('a', { q1: 'Strongly agree' }), skema);
+    expect(hasil.nilai).toBeCloseTo(100, 10);
+    expect(hasil.butirKosong).toBe(1);
+  });
+
   it('memberi 100 bila seluruh butir bernilai maksimum', () => {
     const hasil = hitungNilaiResponden(
       responden('a', { q1: 'Strongly agree', q2: 'Strongly agree', q3: 'Strongly agree' }),

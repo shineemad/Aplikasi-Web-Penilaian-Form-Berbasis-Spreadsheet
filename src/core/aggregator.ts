@@ -1,4 +1,4 @@
-import { rentangNilaiManual, skorJawaban, skorMaksAturan } from './scorer';
+import { jawabanKolom, rentangNilaiManual, skorJawaban, skorMaksAturan } from './scorer';
 import type {
   ButirSkema,
   JawabanResponden,
@@ -107,7 +107,7 @@ export function hitungNilaiResponden(
       continue;
     }
 
-    const hasil = skorJawaban(responden.jawaban[butir.kolomAsal], butir.aturan);
+    const hasil = skorJawaban(jawabanKolom(responden.jawaban, butir.kolomAsal), butir.aturan);
 
     if (hasil.status === 'peringatan') {
       peringatan.push(`${butir.label}: ${hasil.pesan}`);
@@ -214,7 +214,7 @@ export function hitungIndeksDimensi(
         continue;
       }
 
-      const hasil = skorJawaban(responden.jawaban[butir.kolomAsal], butir.aturan);
+      const hasil = skorJawaban(jawabanKolom(responden.jawaban, butir.kolomAsal), butir.aturan);
 
       if (hasil.status === 'terhitung') {
         agg.jumlahRasio += hasil.skor / skorMaks;

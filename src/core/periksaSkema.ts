@@ -1,5 +1,5 @@
 import { normalisasiTeks } from './normalisasi';
-import { skorMaksAturan } from './scorer';
+import { jawabanKolom, skorMaksAturan } from './scorer';
 import type { JawabanResponden, Skema } from './tipe';
 
 export type MasalahSkema =
@@ -11,6 +11,14 @@ export type MasalahSkema =
       opsi: { teks: string; jumlahBaris: number }[];
     }
   | { jenis: 'skor-maks-tidak-sah'; kolomAsal: string; label: string; skorMaks: number | null }
+  | {
+      jenis: 'skor-peta-melampaui-maks';
+      kolomAsal: string;
+      label: string;
+      skorMaks: number;
+      /** Setiap opsi yang melampaui, dalam urutan penulisannya di peta. */
+      opsi: { teks: string; skor: number }[];
+    }
   | { jenis: 'bobot-tidak-positif'; kolomAsal: string; label: string; bobot: number }
   | {
       jenis: 'kunci-peta-kembar';
@@ -21,14 +29,31 @@ export type MasalahSkema =
     }
   | { jenis: 'kolom-tidak-ada'; kolomAsal: string; label: string };
 
+/**
+ * Hal yang patut diperiksa admin tetapi **tidak** menghalangi penyimpanan.
+ *
+ * Peta yang opsi tertingginya belum mencapai `skorMaks` sah: skala yang sengaja
+ * tidak penuh — misalnya satu-satunya opsi bernilai 2,5 pada skala 0..5 —
+ * adalah rancangan, bukan kekeliruan. Yang tidak sah adalah kebalikannya.
+ */
+export type PeringatanSkema = {
+  jenis: 'peta-tidak-mencapai-maks';
+  kolomAsal: string;
+  label: string;
+  skorMaks: number;
+  tertinggi: number;
+};
+
 export interface HasilPeriksaSkema {
   masalah: MasalahSkema[];
+  peringatan: PeringatanSkema[];
   /** Salah selama masih ada satu masalah pun. Tidak ada masalah yang boleh diabaikan. */
   bolehDisimpan: boolean;
 }
 
 export function periksaSkema(skema: Skema, baris: JawabanResponden[]): HasilPeriksaSkema {
   const masalah: MasalahSkema[] = [];
+  const peringatan: PeringatanSkema[] = [];
 
   const kolomTersedia = new Set<string>();
   for (const responden of baris) {
@@ -47,6 +72,33 @@ export function periksaSkema(skema: Skema, baris: JawabanResponden[]): HasilPeri
     const skorMaks = skorMaksAturan(butir.aturan);
     if (skorMaks === null || !Number.isFinite(skorMaks) || skorMaks <= 0) {
       masalah.push({ jenis: 'skor-maks-tidak-sah', kolomAsal, label, skorMaks });
+    } else if (butir.aturan.jenis === 'peta-opsi') {
+      // Opsi yang melampaui skorMaks menghasilkan rasio di atas 100 persen,
+      // sehingga nilai responden melewati 100 tanpa satu pun angka tampak ganjil.
+      const melampaui: { teks: string; skor: number }[] = [];
+      let tertinggi = -Infinity;
+      for (const [teks, skor] of Object.entries(butir.aturan.peta)) {
+        if (skor > tertinggi) tertinggi = skor;
+        if (skor > skorMaks) melampaui.push({ teks, skor });
+      }
+
+      if (melampaui.length > 0) {
+        masalah.push({
+          jenis: 'skor-peta-melampaui-maks',
+          kolomAsal,
+          label,
+          skorMaks,
+          opsi: melampaui,
+        });
+      } else if (Number.isFinite(tertinggi) && tertinggi < skorMaks) {
+        peringatan.push({
+          jenis: 'peta-tidak-mencapai-maks',
+          kolomAsal,
+          label,
+          skorMaks,
+          tertinggi,
+        });
+      }
     }
 
     if (butir.aturan.jenis === 'peta-opsi') {
@@ -82,7 +134,7 @@ export function periksaSkema(skema: Skema, baris: JawabanResponden[]): HasilPeri
 
     const takDikenal = new Map<string, { teks: string; jumlahBaris: number }>();
     for (const responden of baris) {
-      const jawaban = responden.jawaban[kolomAsal];
+      const jawaban = jawabanKolom(responden.jawaban, kolomAsal);
       if (jawaban === undefined) continue;
 
       const bentuk = normalisasiTeks(jawaban);
@@ -104,5 +156,5 @@ export function periksaSkema(skema: Skema, baris: JawabanResponden[]): HasilPeri
     }
   }
 
-  return { masalah, bolehDisimpan: masalah.length === 0 };
+  return { masalah, peringatan, bolehDisimpan: masalah.length === 0 };
 }
