@@ -56,7 +56,7 @@ Empat berikut lahir dari rencana ini.
 
 ## Koreksi terhadap spec
 
-Tiga hal diputuskan di sini; semuanya menuntut suntingan spec pada Tugas 5.
+Lima hal diputuskan di sini; semuanya menuntut suntingan spec pada Tugas 5. D4 dan D5 ditambahkan setelah tinjauan Tugas 1 — keduanya menyelesaikan hal yang baru terlihat ketika kodenya ada.
 
 ### D1 — Butir manual tanpa nilai: ditandai, bukan dilewati
 
@@ -81,6 +81,26 @@ Yang **tidak** diputuskan di sini: apakah server harus menolak koreksi pada sesi
 Aturan `manual` membawa `min` dan `maks`. Nilai di luar rentang itu menghasilkan **peringatan** dan butirnya dikeluarkan dari perhitungan — tidak dijepit, tidak dibulatkan (Batasan Global 22).
 
 Validasinya di core, bukan di `Kode.gs`, karena server tidak membaca `Skema` saat menulis (C7) dan memaksanya membaca berarti dua sheet tambahan dibuka di dalam kunci pada operasi tersering. Core sudah memegang `Skema` saat merekap, jadi di situlah tempat termurah dan paling teruji.
+
+### D4 — Atribusi koreksi tidak masuk agregator
+
+D2 menuntut hasil membawa catatan bahwa sebuah butir dikoreksi "beserta siapa yang mengoreksi". Antarmuka yang ditetapkan Tugas 1 bertentangan dengan itu: `nilaiManual` berbentuk `Map<kolomAsal, number>`, dan angka tidak bisa membawa `oleh`.
+
+**Keputusan:** `oleh` **tidak** masuk ke agregator. Core cukup mencatat **kolom mana** yang dikoreksi — `butirDikoreksi` pada `HasilNilaiResponden`, `dikoreksi` pada `NilaiSesi`.
+
+Atribusinya sudah ada dan sudah teruji di tempat lain: `HasilBerlaku.nilaiDari.oleh` di [penilaian.ts](../../../src/core/penilaian.ts), yang dibangun dari jejak audit append-only sheet `Penilaian` (§6.3). Memaksa `oleh` ikut masuk agregator akan menduplikasi sumber kebenaran itu, dan duplikat yang bisa berbeda isinya lebih buruk daripada satu sumber yang harus digabung. Penggabungan dilakukan di lapisan pelaporan, yang memang memegang `HasilBerlaku` dan `NilaiSesi` sekaligus.
+
+Akibatnya bagi Tugas 2: adaptor membangun `Map<kolomAsal, number>` dari nilai berlaku, dan membawa `oleh` lewat jalurnya sendiri — bukan dengan memperkaya nilai manual menjadi objek.
+
+### D5 — Indeks dimensi merata-ratakan rasio, bukan menjumlahkan skor mentah
+
+Rumus §8.2 menuliskan penyebut sebagai $|T_d| \cdot s^{\max}$, yaitu satu $s^{\max}$ untuk seluruh dimensi. Rumus itu ditulis untuk survei Likert yang seluruh butirnya berskala sama, dan menjadi ambigu begitu D1 memasukkan butir `manual` ke perhitungan: satu dimensi kini bisa memuat butir Likert 1..5 dan esai 0..100 sekaligus.
+
+Menerjemahkannya secara harfiah menjadi $\sum s / \sum s^{\max}$ membobot tiap pasangan dengan skor maksimumnya sendiri. Satu esai 0..100 lalu menenggelamkan dua puluh butir Likert yang sedimensi dengannya: empat butir Likert bernilai 5/5 ditambah satu esai bernilai 50/100 menghasilkan indeks 58,3 sementara nilai respondennya 90.
+
+**Keputusan:** indeks mengakumulasi **rasio** $s_{r,k}/s^{\max}_k$ per pasangan lalu membaginya dengan $|T_d|$. Untuk dimensi berskala seragam hasilnya identik dengan rumus §8.2, dan untuk skala campuran ia memenuhi kalimat §8.2 sendiri: "Bila seluruh bobot butir sama, hasilnya setara dengan rata-rata sederhana seluruh butir."
+
+Turunannya pada indeks keseluruhan: bobot sebuah dimensi adalah jumlah bobot butir yang **benar-benar menyumbang pasangan**, bukan seluruh bobot butirnya pada `Skema`. Memakai bobot skema membuat butir yang masih menunggu penilaian menggelembungkan dimensinya — bentuk cermin dari bug penyebut yang rencana ini perbaiki, dan butir menunggu adalah keadaan normal selama penilaian berjalan.
 
 ---
 
