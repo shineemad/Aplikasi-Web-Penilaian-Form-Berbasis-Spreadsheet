@@ -1229,6 +1229,63 @@ describe('bacaSkema', () => {
     expect(hasil.masalah[0]?.pesan).toMatch(/bobot/);
   });
 
+  describe('periksaSkema dijalankan sebelum skema dihasilkan', () => {
+    /**
+     * Ketiga baris di bawah **terbaca sempurna** satu per satu: setiap selnya
+     * berisi, tipenya benar, dan parameternya JSON yang sah. Yang mustahil
+     * adalah kombinasinya, dan hanya core yang tahu kombinasi mana. Tanpa
+     * panggilan `periksaSkema` di `bacaSkema`, skemanya tetap dihasilkan dan
+     * angkanya baru terlihat salah beberapa langkah kemudian — peta 7 pada
+     * skala 0..5 menghasilkan nilai 140, bobot 0 membuat butirnya tidak
+     * berarti apa-apa, dan bobot negatif membuat jawaban yang baik menurunkan
+     * nilai.
+     *
+     * Menghasilkan skema yang sebagian butirnya bermasalah sama buruknya:
+     * rata-rata terbobot lalu dihitung atas instrumen yang tidak pernah
+     * dipilih siapa pun. Karena itu yang dituntut di sini dua hal sekaligus —
+     * masalahnya dilaporkan **dan** skemanya tidak dihasilkan.
+     */
+    function barisSkema(parameter: string, bobot: unknown): unknown[] {
+      return ['SK1', 'Q1', 'Kepuasan', 'kemudahan', 'peta-opsi', parameter, 5, bobot, 'nol'];
+    }
+
+    const PETA_MELAMPAUI = '{"peta":{"agree":7},"skorMaks":5}';
+    const PETA_SAH = '{"peta":{"agree":5},"skorMaks":5}';
+
+    it('menjatuhkan skema yang petanya melampaui skor maksimum', () => {
+      const hasil = bacaSkema([KEPALA_SKEMA, barisSkema(PETA_MELAMPAUI, 1)]);
+
+      expect(hasil.baris).toEqual([]);
+      expect(hasil.masalah.map((satu) => satu.skemaId)).toContain('SK1');
+      expect(hasil.masalah.some((satu) => /"agree" bernilai 7/.test(satu.pesan))).toBe(true);
+    });
+
+    it('menjatuhkan skema yang salah satu bobotnya nol', () => {
+      const hasil = bacaSkema([KEPALA_SKEMA, barisSkema(PETA_SAH, 0)]);
+
+      expect(hasil.baris).toEqual([]);
+      expect(hasil.masalah.map((satu) => satu.skemaId)).toContain('SK1');
+      expect(hasil.masalah.some((satu) => /bobot.* bernilai 0/.test(satu.pesan))).toBe(true);
+    });
+
+    it('menjatuhkan skema yang salah satu bobotnya negatif', () => {
+      const hasil = bacaSkema([KEPALA_SKEMA, barisSkema(PETA_SAH, -1)]);
+
+      expect(hasil.baris).toEqual([]);
+      expect(hasil.masalah.map((satu) => satu.skemaId)).toContain('SK1');
+      expect(hasil.masalah.some((satu) => /bobot.* bernilai -1/.test(satu.pesan))).toBe(true);
+    });
+
+    it('tidak menjatuhkan baris yang sah di sebelah baris yang bermasalah', () => {
+      // Arah sebaliknya: tanpa uji ini, implementasi yang menolak setiap skema
+      // apa pun isinya akan tetap hijau pada ketiga uji di atas.
+      const hasil = bacaSkema([KEPALA_SKEMA, barisSkema(PETA_SAH, 1)]);
+
+      expect(hasil.masalah).toEqual([]);
+      expect(hasil.baris.map((satu) => satu.skemaId)).toEqual(['SK1']);
+    });
+  });
+
   it('menerima bobot dan skor_maks bertipe teks', () => {
     const hasil = bacaSkema([
       KEPALA_SKEMA,
