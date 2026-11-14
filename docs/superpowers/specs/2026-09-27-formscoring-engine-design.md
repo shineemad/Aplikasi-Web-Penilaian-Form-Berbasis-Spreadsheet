@@ -158,20 +158,36 @@ Kolom `manual` sengaja **tidak** ikut dihitung meskipun aturannya bukan `abaikan
 
 Email **dinormalisasi sebelum di-hash** (huruf kecil, spasi tepi dibuang). Inilah yang membuat orang yang sama dapat dikenali di Pre-Test dan Post-Test meski menuliskan emailnya dengan huruf besar berbeda.
 
+Nama kolom `jawaban_*` dan `meta_*` berbentuk awalan `jawaban_` atau `meta_` ditambah **header asli yang dipangkas spasi tepinya** — bukan slug, bukan nomor urut. Alasannya satu hal saja: pembalikannya fungsi identitas, buang awalannya dan selesai. Slug tidak dapat dibalik sehingga pemetaannya harus ikut disimpan, dan nomor urut patah setiap kali urutan baris `Skema` berubah. Pada keduanya, pencocokan kembali ke `Skema.kolom_asal` gagal **diam-diam**: jawaban hilang dari perhitungan tanpa meninggalkan jejak, kelas kegagalan yang sama dengan opsi tak dikenal pada §7.2 butir 2.
+
+Dua kewajiban lahir dari pilihan ini, dan keduanya **ditegakkan saat impor**, bukan saat membaca — begitu kepala kolomnya tertulis di sheet, kerusakannya sudah terjadi:
+
+- header yang memuat baris baru **ditolak**, karena ia memecah kepala kolom di sheet
+- dua header yang **bentrok setelah dipangkas** ditolak, dengan menyebutkan keduanya
+
+Pencocokan kembali ke `kolom_asal` memakai pangkas spasi tepi saja, sejalan dengan importer dan `Kode.gs` yang keduanya sudah memakai aturan itu. Perhatikan bahwa ini **berbeda** dari normalisasi §7.1, yang juga merapatkan spasi ganda dan menyamakan huruf. (Koreksi terhadap rumusan awal spec ini, diputuskan saat menyusun rencana "Rekap dan Nilai Manual".)
+
 ### 6.2 `Skema`
 
 Satu baris per kolom yang dinilai.
 
-| Kolom        | Isi                                                        |
-| ------------ | ---------------------------------------------------------- |
-| `skema_id`   | Pengenal skema; satu skema dapat dipakai ulang lintas sesi |
-| `kolom_asal` | Header asli dari spreadsheet                               |
-| `label`      | Nama yang ditampilkan                                      |
-| `dimensi`    | Pengelompokan, misalnya `kemudahan`                        |
-| `aturan`     | `peta-opsi` \| `kunci-jawaban` \| `manual` \| `abaikan`    |
-| `parameter`  | JSON — peta opsi, kunci jawaban, atau rentang nilai manual |
-| `skor_maks`  | Nilai tertinggi yang mungkin untuk kolom ini               |
-| `bobot`      | Bobot dalam perhitungan akhir                              |
+| Kolom              | Isi                                                          |
+| ------------------ | ------------------------------------------------------------ |
+| `skema_id`         | Pengenal skema; satu skema dapat dipakai ulang lintas sesi   |
+| `kolom_asal`       | Header asli dari spreadsheet                                 |
+| `label`            | Nama yang ditampilkan                                        |
+| `dimensi`          | Pengelompokan, misalnya `kemudahan`                          |
+| `aturan`           | `peta-opsi` \| `kunci-jawaban` \| `manual` \| `abaikan`      |
+| `parameter`        | JSON — peta opsi, kunci jawaban, atau rentang nilai manual   |
+| `skor_maks`        | Nilai tertinggi yang mungkin untuk kolom ini                 |
+| `bobot`            | Bobot dalam perhitungan akhir                                |
+| `perlakuan_kosong` | `abaikan` \| `nol` — perlakuan jawaban kosong (§7.2 butir 3) |
+
+Kolom `perlakuan_kosong` tidak ada pada rumusan awal, padahal §7.2 butir 3 melarang skema difinalkan sebelum admin memutuskannya. Keputusan itu ditegakkan tetapi tidak punya tempat disimpan, sehingga sebuah `Skema` tidak dapat dibentuk kembali dari sheet sama sekali. Menyimpannya pada sheet `Sesi` ditolak: skema yang sama dipakai Pre-Test dan Post-Test akan dapat diperlakukan berbeda, sehingga kolom `selisih` (§8.4) salah tanpa satu pun peringatan — dua instrumen identik dinilai dengan aturan berbeda lalu dibandingkan. Menyelipkannya ke dalam `parameter` juga ditolak, karena itu menyembunyikan keputusan yang justru harus terlihat.
+
+Harga dari pilihan ini: nilainya **terulang** pada setiap baris milik satu `skema_id`, sehingga dua baris dapat berselisih. Perselisihan itu wajib **ditandai**, bukan diselesaikan dengan mengambil baris pertama. Mengambil yang pertama berarti separuh skema dinilai dengan aturan yang tidak pernah dipilih siapa pun.
+
+`skor_maks` adalah **bacaan manusia saja; `parameter` yang berwenang.** Tipe `Aturan` hanya menyimpan skor maksimum untuk `peta-opsi`; pada `kunci-jawaban` nilainya tersirat 1, pada `abaikan` ia tidak berarti, dan pada `manual` ia menggandakan `maks` di dalam `parameter` — dua tempat yang dapat berselisih. Kolomnya tidak dihapus karena admin memang memeriksa sheet dengan mata, dan skor maksimum adalah hal pertama yang dicari saat mencurigai sebuah angka. Tetapi karena ia tidak berwenang, perselisihannya dengan `parameter` wajib **ditandai**: angka yang berselisih dan didiamkan lebih buruk daripada kolom yang tidak ada, sebab ia membuat pembaca yakin pada angka yang tidak dipakai menghitung apa pun. (Koreksi terhadap rumusan awal spec ini, diputuskan saat menyusun rencana "Rekap dan Nilai Manual".)
 
 ### 6.3 `Penilaian`
 
@@ -200,6 +216,12 @@ Tiga hal pada paragraf di atas tidak dapat dibaca harfiah.
 
 (Koreksi terhadap rumusan awal spec ini, diputuskan saat menyusun rencana "Store, Apps Script, dan Peran".)
 
+Satu keputusan lagi menyusul, dan ia menyangkut isi baris alih-alih cara membacanya. **Baris `Penilaian` untuk kolom yang bukan `manual` berlaku sebagai koreksi**, yang menimpa skor otomatis kolom itu. Rumusan awal menyebut input manual sebagai pengecualian (§5.1 langkah 5) tanpa melarang penilai menulis nilai untuk kolom beraturan `peta-opsi` atau `kunci-jawaban`, dan server pun menerimanya.
+
+Alasannya ada pada paragraf pertama §6.3 sendiri: jejak audit dibuat supaya perbedaan pendapat antar penilai terlihat alih-alih tersembunyi. Menolak koreksi berarti skor otomatis yang salah — misalnya akibat opsi yang terpetakan keliru — tidak akan pernah dapat dibetulkan tanpa menyunting sheet dengan tangan, dan suntingan tangan memotong seluruh jejak audit yang justru menjadi alasan sheet ini ada.
+
+Karena itu koreksinya diterima, dan hasil perhitungan **membawa catatan butir mana yang dikoreksi**. Atribusi penilainya tidak disalin ke sana: ia dibaca dari kolom `oleh` pada baris yang berlaku, satu sumber yang sudah ada, karena dua salinan yang dapat berbeda isinya lebih buruk daripada satu sumber yang harus digabung di lapisan pelaporan. (Koreksi terhadap rumusan awal spec ini, diputuskan saat menyusun rencana "Rekap dan Nilai Manual".)
+
 ### 6.4 `Sesi`
 
 | Kolom       | Isi                                   |
@@ -212,6 +234,14 @@ Tiga hal pada paragraf di atas tidak dapat dibaca harfiah.
 | `status`    | `draft` \| `berjalan` \| `final`      |
 | `penilai`   | Daftar email penilai                  |
 | `admin`     | Daftar email admin                    |
+
+`sesi_id`, `proyek_id`, dan `skema_id` dicocokkan **peka huruf besar-kecil**: `S1` bukan `s1`. Menyeragamkan hurufnya kadang benar, tetapi kadang melebur dua sesi yang sengaja dibedakan begitu — dan peleburan itu tidak dapat dibatalkan setelah nilainya tercampur, sementara pencocokan persis hanya menolak sesuatu yang masih dapat diperbaiki admin. Arah kesalahannya itulah yang membuat pilihannya tidak seimbang.
+
+Harganya dibayar pada pesan, dan harus dibayar: beda ejaan berbunyi "tidak ditemukan" sementara barisnya terpampang di layar, cara tercepat membuat orang menyimpulkan backend-nya rusak. Karena itu penolakannya **menyebutkan ejaan yang ada di sheet**, dan ejaan yang hanya berbeda hurufnya ditandai sebagai **peringatan** tanpa menjatuhkan barisnya. Ini berbeda dari pengenal yang benar-benar kembar, yang barisnya memang dijatuhkan karena tidak ada cara memilih di antaranya; di sini kedua barisnya terbaca benar, dan yang keliru justru pembacanya.
+
+Pada `skema_id` akibatnya paling berbahaya. Sebuah sesi menunjuk `SK1` lalu hanya menemukan separuh butirnya karena sisanya tertulis di bawah `sk1`, dan nilainya menjadi rata-rata terbobot atas separuh instrumen — angka yang tampak wajar.
+
+Ini **pengecualian** terhadap normalisasi §7.1, yang tetap berlaku penuh untuk email (§6.1) dan opsi jawaban. Pada keduanya, menyamakan huruf memang menyatukan hal yang sama. Pada pengenal yang diketik admin dengan tangan, ia menebak. (Koreksi terhadap rumusan awal spec ini, diputuskan saat menyusun rencana "Rekap dan Nilai Manual".)
 
 ### 6.5 `Proyek`
 
@@ -228,6 +258,8 @@ Menaungi beberapa sesi untuk kelompok orang yang sama.
 
 Bila `sesi_awal` atau `sesi_akhir` kosong, kolom `selisih` tidak dibuat sama sekali. Tabel gabungan tetap dihasilkan.
 
+`proyek_id`, serta `sesi_id` yang dirujuk `sesi_urut`, `sesi_awal`, dan `sesi_akhir`, dicocokkan peka huruf besar-kecil seperti pada §6.4. Pembanding yang ejaannya meleset karena itu menunjuk sesi yang tidak ada: ia menghasilkan peringatan dan kolom `selisih` tetap kosong — bukan terisi diam-diam dari sesi yang keliru. (Koreksi terhadap rumusan awal spec ini, diputuskan saat menyusun rencana "Rekap dan Nilai Manual".)
+
 ### 6.6 Catatan pemisahan
 
 Memisahkan `Responden` dari `Penilaian` membuat impor ulang aman: form masih menerima jawaban baru, impor ulang hanya menyentuh `Responden` pada sesi yang bersangkutan, dan pekerjaan penilai tidak pernah tersentuh.
@@ -240,12 +272,22 @@ Memisahkan `Responden` dari `Penilaian` membuat impor ulang aman: form masih men
 
 | Aturan          | Perilaku                                  | Parameter                                          |
 | --------------- | ----------------------------------------- | -------------------------------------------------- |
-| `peta-opsi`     | Cocokkan jawaban dengan peta opsi → angka | `{"strongly disagree":1, ..., "strongly agree":5}` |
+| `peta-opsi`     | Cocokkan jawaban dengan peta opsi → angka | `{"peta":{…},"skorMaks":5}`                        |
 | `kunci-jawaban` | Cocokkan dengan jawaban benar → 1 atau 0  | `{"benar":"B"}`                                    |
 | `manual`        | Diisi manusia                             | `{"min":0,"maks":100}`                             |
 | `abaikan`       | Tidak ikut perhitungan                    | —                                                  |
 
 **Normalisasi wajib sebelum pencocokan** pada `peta-opsi` dan `kunci-jawaban`: buang spasi tepi, rapatkan spasi ganda, samakan menjadi huruf kecil. Tanpa langkah ini, `"Strongly Agree"` dan `"Strongly agree"` diperlakukan sebagai dua hal berbeda dan dua butir pada form nyata akan menghasilkan nilai kosong secara diam-diam.
+
+**Butir `manual` yang belum dinilai ditandai menunggu.** Rumusan awal memberi aturan `manual` tanpa menyatakan apa yang terjadi bila penilai belum mengisinya. Butir seperti itu dikeluarkan dari pembilang **dan** penyebut — sama seperti perlakuan `abaikan` pada §7.2 butir 3 — tetapi **jumlahnya dilaporkan**, dan responden yang memilikinya mendapat penanda tersendiri sehingga tabel rekap dapat menampilkan "menunggu 3 butir" alih-alih angka yang seolah lengkap.
+
+Penyebutnya memang mengecil, dan itu pilihan yang paling tidak buruk dari tiga. Menghitungnya sebagai nol menghukum responden atas pekerjaan penilai yang belum selesai — bentuk paling halus dari pelanggaran "kosong bukan nol". Melewatinya tanpa jejak adalah satu-satunya yang tidak meninggalkan apa pun untuk diperiksa. "Belum dinilai orang" dan "tidak dijawab responden" adalah dua hal berbeda, dan keduanya dihitung terpisah.
+
+**Nilai manual di luar `min`–`maks` menghasilkan peringatan, dan butirnya dikeluarkan dari perhitungan.** Ia tidak dijepit dan tidak dibulatkan: menjepit nilai 7 menjadi 5 pada rubrik 1–5 menghasilkan angka yang terlihat sah dan salah, persis yang §7.2 ada untuk mencegah. Pemeriksaannya dilakukan saat merekap, bukan saat server menulis baris `Penilaian`, karena saat menulis server tidak membaca `Skema` dan memaksanya membaca berarti membuka dua sheet tambahan di dalam kunci pada operasi yang paling sering dilakukan.
+
+**Bentuk `parameter`.** Contoh `peta-opsi` pada rumusan awal berupa peta datar, yang tidak menyediakan tempat bagi `skorMaks`. Karena `skor_maks` pada sheet hanya bacaan manusia (§6.2) dan skor maksimum tidak dapat diturunkan dari data — opsi tertinggi yang kebetulan tidak pernah dipilih akan menurunkannya terlalu rendah — bentuk yang dipakai adalah `{"peta":{"strongly disagree":1, …, "strongly agree":5},"skorMaks":5}`.
+
+`kunci-jawaban` memakai medan **`benar`** pada sheet, sedangkan tipe `Aturan` di core memakai `kunci`. Beda nama itu bukan kosmetik: `JSON.stringify(aturan)` yang ditulis apa adanya menghasilkan `{"kunci":"B"}`, yang tidak dikenali saat dibaca kembali — dan satu baris `Skema` yang gagal membatalkan seluruh skema itu, sehingga sesi yang memakainya tidak dapat direkap sama sekali. Penulisan ke sheet karena itu melewati penerjemah tersendiri, `tulisParameter` pada `src/io/adaptorSheet.ts`, yang ada justru untuk perbedaan ini. (Koreksi terhadap rumusan awal spec ini, diputuskan saat menyusun rencana "Rekap dan Nilai Manual".)
 
 ### 7.2 Tiga aturan penanganan data
 
@@ -273,6 +315,10 @@ dengan $w_k$ bobot kriteria $k$, $s_{r,k}$ skor responden $r$ pada kriteria $k$,
 
 Urutan peringkat: nilai menurun; bila seri, jumlah butir terjawab lebih banyak menang; bila masih seri, cap waktu pengiriman lebih awal menang.
 
+**Butir yang menunggu penilaian manual keluar dari penyebut** (§7.1). Bobotnya tidak ikut dinormalisasi, sehingga $\sum w_k = 1$ dihitung atas butir yang benar-benar punya skor. Konsekuensinya harus dipikul terbuka: responden yang seluruh butir otomatisnya benar bernilai 100 meskipun tiga butir esainya belum dinilai siapa pun.
+
+Angka itu sah, tetapi tidak boleh pernah muncul sendirian. Responden yang punya butir menunggu **wajib dapat dikenali** pada setiap tabel yang menampilkan nilainya, beserta jumlah butir yang menunggu. Tanpa penanda itu, rata-rata terbobot atas separuh instrumen tidak dapat dibedakan dari nilai yang lengkap — dan selama penilaian berjalan, separuh instrumen adalah keadaan yang normal, bukan luar biasa. (Koreksi terhadap rumusan awal spec ini, diputuskan saat menyusun rencana "Rekap dan Nilai Manual".)
+
 ### 8.2 Mode indeks
 
 Untuk survei evaluasi. Indeks per dimensi $d$, diagregasi dari seluruh responden:
@@ -289,6 +335,16 @@ Isi $T_d$ bergantung pada perlakuan `null` yang dipilih di skema:
 Menuliskan penyebut sebagai $|T_d|$ dan bukan $n_r \cdot n_k$ disengaja: dengan data tidak lengkap, hasil kali jumlah responden dan jumlah butir tidak sama dengan jumlah jawaban yang ada, dan memakainya akan membuat indeks terlalu rendah.
 
 **Indeks keseluruhan** adalah rata-rata indeks tiap dimensi, dibobot dengan bobot dimensi pada sheet `Skema` (bobot dimensi = jumlah bobot butir di dalamnya, dinormalisasi). Bila seluruh bobot butir sama, hasilnya setara dengan rata-rata sederhana seluruh butir.
+
+**Yang diakumulasi adalah rasio per pasangan, bukan jumlah skor mentah.** Rumus di atas ditulis untuk survei yang seluruh butirnya berskala sama — satu $s^{\max}$ untuk seluruh dimensi — dan menjadi ambigu begitu butir `manual` ikut dihitung (§7.1), karena satu dimensi kini dapat memuat butir Likert 1..5 dan esai 0..100 sekaligus. Dibaca harfiah menjadi $\sum s / \sum s^{\max}$, tiap pasangan terbobot oleh skor maksimumnya sendiri, dan satu esai menenggelamkan dua puluh butir Likert yang sedimensi dengannya: empat butir Likert bernilai 5/5 ditambah satu esai bernilai 50/100 menghasilkan indeks 58,3% sementara nilai responden yang sama 90.
+
+Yang berlaku:
+
+$$\text{Indeks}_d = \frac{1}{|T_d|} \sum_{(r,k) \in T_d} \frac{s_{r,k}}{s^{\max}_{k}} \times 100\%$$
+
+Untuk dimensi berskala seragam hasilnya identik dengan rumus sebelumnya; untuk skala campuran ia memenuhi kalimat penutup paragraf di atas, yang rumus harfiahnya justru langgar.
+
+Turunannya pada indeks keseluruhan: bobot sebuah dimensi adalah jumlah bobot butir yang **benar-benar menyumbang pasangan** ke $T_d$, bukan seluruh bobot butirnya pada sheet `Skema`. Memakai bobot skema membuat butir yang masih menunggu penilaian menggelembungkan dimensinya — bentuk cermin dari penyebut yang dikecilkan pada §8.1. Dimensi yang seluruh pasangannya menunggu menghasilkan indeks `null`, bukan 0. (Koreksi terhadap rumusan awal spec ini, diputuskan saat menyusun rencana "Rekap dan Nilai Manual".)
 
 ### 8.3 Kategori interpretasi
 
