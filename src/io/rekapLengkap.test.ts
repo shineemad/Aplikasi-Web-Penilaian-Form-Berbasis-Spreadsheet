@@ -669,3 +669,80 @@ describe('periksaSkema pada jalur rekap melihat kolom yang tidak ada', () => {
     expect(rakitan.tabel.kolom).not.toContain('Selisih');
   });
 });
+
+describe('skema yang terbelah dua ejaan tidak hilang tanpa suara', () => {
+  /**
+   * Sesi menunjuk `SK1`; butir pertamanya tertulis di bawah `SK1` dan butir
+   * esainya di bawah `sk1`. Karena `bacaRekap_` menyaring dengan pencocokan
+   * persis (D9, §6.4), baris `sk1` **tidak pernah sampai ke adaptor** — jadi
+   * peringatan beda ejaan di `bacaSkema` mustahil menyala di jalur yang
+   * sesungguhnya. Satu-satunya lapisan yang masih melihat kedua ejaan
+   * bersamaan adalah backend, dan di situlah peringatannya wajib lahir.
+   *
+   * Angkanya dipilih supaya kerusakannya punya bentuk: Ani menjawab "Ya"
+   * (1/1) dan esainya dinilai 0 (0/10), sehingga skema utuh bernilai 50 dan
+   * skema yang terbelah bernilai 100 — tampak sempurna justru karena separuh
+   * instrumennya hilang.
+   */
+  const SKEMA_ESAI_EJAAN_LAIN: unknown[] = ['sk1', ...SKEMA_ESAI.slice(1)];
+
+  const ANI_SAJA: unknown[][] = [
+    ['S1', ID_ANI, 'ani@kampus.id', 'Ani', 'lengkap', DIIMPOR, 'Ya', 'Statistika'],
+  ];
+
+  const ESAI_NOL: Tulisan[] = [
+    { sesiId: 'S1', respondenId: ID_ANI, kriteria: KOLOM_ESAI, nilai: 0 },
+  ];
+
+  function rakitSkema(barisEsai: unknown[]): Rakitan {
+    const ss = buatRuangKerja({
+      proyek: [KEPALA_PROYEK, BARIS_PROYEK_SATU_SESI],
+      sesi: [KEPALA_SESI, BARIS_S1],
+      responden: [KEPALA_RESPONDEN, ...ANI_SAJA],
+      skema: [KEPALA_SKEMA, SKEMA_BUTIR_A, barisEsai],
+    });
+    tulisPenilaian(ss, ESAI_NOL);
+    return rakitRekap(ss);
+  }
+
+  it('skema yang ejaannya seragam menghasilkan kedua butirnya', () => {
+    // Pembanding. Tanpa baris ini, angka 100 di bawah tidak punya arti apa pun.
+    const s1 = sesiRakit(rakitSkema(SKEMA_ESAI).perSesi, 'S1');
+
+    expect(s1.skema.butir.map((satu) => satu.kolomAsal)).toEqual([KOLOM_BERSPASI, KOLOM_ESAI]);
+    expect(nilaiSesiWajib(rakitSkema(SKEMA_ESAI).nilaiSesi, 'S1').nilai.get(ID_ANI)).toBe(50);
+  });
+
+  it('ejaan kedua membuat butir esainya tidak pernah sampai ke adaptor', () => {
+    const rakitan = rakitSkema(SKEMA_ESAI_EJAAN_LAIN);
+    const s1 = sesiRakit(rakitan.perSesi, 'S1');
+
+    expect(s1.skema.butir.map((satu) => satu.kolomAsal)).toEqual([KOLOM_BERSPASI]);
+    // Bukan keluhan terhadap adaptor: baris "sk1" memang tidak pernah
+    // diserahkan kepadanya, jadi ia tidak punya apa pun untuk dibandingkan.
+    expect(s1.masalah).toEqual([]);
+  });
+
+  it('nilainya tampak sempurna justru karena separuh instrumennya hilang', () => {
+    const rakitan = rakitSkema(SKEMA_ESAI_EJAAN_LAIN);
+
+    expect(nilaiSesiWajib(rakitan.nilaiSesi, 'S1').nilai.get(ID_ANI)).toBe(100);
+    expect(selTabel(rakitan.tabel, ID_ANI, 'Pre-Test')).toBe('100,0');
+  });
+
+  it('backend memperingatkannya dengan menyebut kedua ejaannya', () => {
+    // Inilah satu-satunya jejak kerusakan di atas. Tanpa peringatan ini,
+    // angka 100 adalah seluruh yang dilihat siapa pun.
+    const s1 = sesiRakit(rakitSkema(SKEMA_ESAI_EJAAN_LAIN).perSesi, 'S1');
+    const pesan = s1.peringatanBackend.join(' | ');
+
+    expect(pesan).toContain('"sk1"');
+    expect(pesan).toContain('"SK1"');
+    expect(pesan).toMatch(/separuh instrumen/i);
+  });
+
+  it('tidak memperingatkan apa pun bila ejaannya seragam', () => {
+    const s1 = sesiRakit(rakitSkema(SKEMA_ESAI).perSesi, 'S1');
+    expect(s1.peringatanBackend).toEqual([]);
+  });
+});

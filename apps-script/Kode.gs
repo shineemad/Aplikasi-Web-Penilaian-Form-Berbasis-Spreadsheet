@@ -56,9 +56,26 @@ var KOLOM_SESI_WAJIB = ['sesi_id', 'status', 'penilai', 'admin'];
  * sebagai syarat, bukan sebagai kemudahan.
  */
 var SHEET_REKAP = [
-  { medan: 'responden', nama: NAMA_SHEET_RESPONDEN, kolom: 'sesi_id' },
-  { medan: 'skema', nama: NAMA_SHEET_SKEMA, kolom: 'skema_id' },
-  { medan: 'penilaian', nama: NAMA_SHEET_PENILAIAN, kolom: 'sesi_id' },
+  {
+    medan: 'responden',
+    nama: NAMA_SHEET_RESPONDEN,
+    kolom: 'sesi_id',
+    akibat: 'pesertanya tidak muncul sama sekali pada rekap ini',
+  },
+  {
+    medan: 'skema',
+    nama: NAMA_SHEET_SKEMA,
+    kolom: 'skema_id',
+    akibat:
+      'butirnya hilang dari skema, sehingga nilai setiap responden dihitung atas separuh ' +
+      'instrumen dan tetap tampak wajar',
+  },
+  {
+    medan: 'penilaian',
+    nama: NAMA_SHEET_PENILAIAN,
+    kolom: 'sesi_id',
+    akibat: 'nilai yang sudah ditulis penilai tidak ikut terbaca',
+  },
 ];
 
 /**
@@ -338,15 +355,32 @@ function bacaRekap_(perintah) {
 
     var kunci = satu.kolom === 'skema_id' ? sesi.skemaId : perintah.sesiId;
     var terpilih = [kepala];
+    var ejaanLain = [];
+    var jumlahLain = 0;
     // Kunci kosong tidak pernah dicocokkan. Menyaring dengan '' justru menarik
     // setiap baris yang kolom kuncinya ikut kosong, lalu menghitungnya sebagai
     // milik sesi ini.
     if (kunci !== '') {
+      var kunciKecil = kunci.toLowerCase();
       for (var b = 1; b < kisi.length; b += 1) {
-        if (rapikanTeks_(kisi[b][kolom[0]]) === kunci) terpilih.push(kisi[b]);
+        var isiKunci = rapikanTeks_(kisi[b][kolom[0]]);
+        if (isiKunci === kunci) {
+          terpilih.push(kisi[b]);
+          continue;
+        }
+        // Baris yang hanya berbeda huruf besar-kecil dibuang oleh pencocokan
+        // persis (D9). Pembuangannya tidak boleh diam: di sinilah satu-satunya
+        // tempat kedua ejaan masih terlihat bersamaan.
+        if (isiKunci !== '' && isiKunci.toLowerCase() === kunciKecil) {
+          if (adaDalam_(ejaanLain, isiKunci) === false) ejaanLain.push(isiKunci);
+          jumlahLain += 1;
+        }
       }
     }
     hasil[satu.medan] = terpilih;
+
+    var beda = peringatanBedaEjaan_(satu, kunci, ejaanLain, jumlahLain);
+    if (beda !== '') peringatan.push(beda);
 
     var sepi = peringatanSepi_(satu, kunci, terpilih.length - 1, kisi.length - 1);
     if (sepi !== '') peringatan.push(sepi);
@@ -373,6 +407,41 @@ function bacaRekap_(perintah) {
       ' baris Penilaian, masing-masing beserta baris kepalanya. Tidak ada angka yang dihitung ' +
       'di sini; perhitungannya dilakukan pemanggil.',
   };
+}
+
+/**
+ * Baris yang kuncinya hanya berbeda huruf besar-kecil dari yang diminta.
+ *
+ * Pencocokan persis (D9, spec §6.4) membuang baris-baris itu, dan pembuangan
+ * itulah yang harus bersuara: adaptor di hilir hanya menerima baris yang sudah
+ * lolos saringan ini, sehingga peringatan beda ejaan di sana tidak akan pernah
+ * menyala untuk baris yang tak pernah sampai kepadanya. `peringatanSepi_` juga
+ * tidak menolong — ia hanya berbunyi bila tak ada satu baris pun yang cocok,
+ * sementara kerusakan yang paling berbahaya justru terjadi saat sebagiannya
+ * cocok: sesi menunjuk "SK1", separuh butirnya tertulis di bawah "sk1", dan
+ * nilainya menjadi rata-rata terbobot atas separuh instrumen yang tampak wajar.
+ */
+function peringatanBedaEjaan_(rencana, kunci, ejaanLain, jumlahLain) {
+  if (ejaanLain.length === 0) return '';
+
+  var daftar = [];
+  for (var i = 0; i < ejaanLain.length; i += 1) daftar.push('"' + ejaanLain[i] + '"');
+
+  return (
+    'Sheet ' +
+    rencana.nama +
+    ' memuat ' +
+    jumlahLain +
+    ' baris ber-' +
+    rencana.kolom +
+    ' ' +
+    daftar.join(' dan ') +
+    ', yang hanya berbeda huruf besar-kecil dari "' +
+    kunci +
+    '". Pengenal dicocokkan persis, jadi baris-baris itu tidak ikut direkap dan ' +
+    rencana.akibat +
+    '. Samakan ejaannya di Spreadsheet bila keduanya memang satu.'
+  );
 }
 
 /**

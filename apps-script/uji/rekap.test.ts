@@ -406,6 +406,25 @@ describe('pengenal dicocokkan peka huruf besar-kecil (D9)', () => {
     expect(kolomDari(kisiWajib(balasan, 'penilaian'), 'penilaian_id')).toEqual([1]);
   });
 
+  it('memperingatkan bahwa baris ber-sesi_id beda ejaan itu dibuang', () => {
+    // Pembuangannya tidak boleh diam. Adaptor di hilir hanya menerima baris
+    // yang sudah lolos saringan ini, jadi peringatan beda ejaan di sana tidak
+    // akan pernah menyala untuk baris yang tak pernah sampai kepadanya.
+    const { balasan } = panggilRekap({
+      ss: buatRuangKerja({
+        responden: [KEPALA_RESPONDEN, RESPONDEN_S1_ANI, RESPONDEN_HURUF_KECIL],
+        penilaian: [KEPALA_PENILAIAN, PENILAIAN_S1, PENILAIAN_HURUF_KECIL],
+      }),
+    });
+
+    const pesan = gabungPeringatan(balasan);
+    expect(pesan).toMatch(/Responden/);
+    expect(pesan).toMatch(/Penilaian/);
+    expect(pesan).toContain('"s1"');
+    expect(pesan).toContain('"S1"');
+    expect(pesan).toMatch(/huruf besar-kecil/i);
+  });
+
   it('tidak menarik baris Skema ber-skema_id huruf kecil', () => {
     // Kalau huruf disamakan, butir "Butir Z" yang tidak pernah dipilih admin
     // ikut menyumbang bobot dan nilainya tetap tampak wajar.
@@ -416,6 +435,51 @@ describe('pengenal dicocokkan peka huruf besar-kecil (D9)', () => {
       KOLOM_BERSPASI,
       'Butir B',
     ]);
+  });
+
+  it('memperingatkan bahwa butir ber-skema_id beda ejaan itu dibuang', () => {
+    // Yang paling berbahaya dari ketiganya: separuh butir hilang, sisanya tetap
+    // menghasilkan rata-rata terbobot yang tampak wajar. `peringatanSepi_`
+    // tidak menolong karena dua butir lainnya memang cocok.
+    const { balasan } = panggilRekap({
+      ss: buatRuangKerja({ skema: [KEPALA_SKEMA, SKEMA_SK1_A, SKEMA_HURUF_KECIL, SKEMA_SK1_B] }),
+    });
+
+    const pesan = gabungPeringatan(balasan);
+    expect(pesan).toMatch(/Skema/);
+    expect(pesan).toContain('"sk1"');
+    expect(pesan).toContain('"SK1"');
+    expect(pesan).toMatch(/separuh instrumen/i);
+  });
+
+  it('menyebut setiap ejaan lain, bukan hanya yang pertama ditemui', () => {
+    const SKEMA_EJAAN_KETIGA: unknown[] = [
+      'Sk1',
+      'Butir Y',
+      'Butir Y',
+      'kemudahan',
+      'peta-opsi',
+      PETA_YA_TIDAK,
+      1,
+      1,
+      'abaikan',
+    ];
+    const { balasan } = panggilRekap({
+      ss: buatRuangKerja({
+        skema: [KEPALA_SKEMA, SKEMA_SK1_A, SKEMA_HURUF_KECIL, SKEMA_EJAAN_KETIGA],
+      }),
+    });
+
+    const pesan = gabungPeringatan(balasan);
+    expect(pesan).toContain('"sk1"');
+    expect(pesan).toContain('"Sk1"');
+    expect(pesan).toMatch(/2 baris/);
+  });
+
+  it('tidak memperingatkan apa pun bila seluruh ejaannya sama', () => {
+    // Penjaga arah sebaliknya: peringatan yang muncul pada ruang kerja yang
+    // sehat membuat seluruh peringatan diabaikan justru saat ia berarti.
+    expect(gabungPeringatan(panggilRekap().balasan)).not.toMatch(/huruf besar-kecil/i);
   });
 
   it('menolak permintaan yang hurufnya tidak sama dengan baris sheet Sesi', () => {
