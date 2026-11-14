@@ -56,7 +56,7 @@ Empat berikut lahir dari rencana ini.
 
 ## Koreksi terhadap spec
 
-Lima hal diputuskan di sini; semuanya menuntut suntingan spec pada Tugas 5. D4 dan D5 ditambahkan setelah tinjauan Tugas 1 — keduanya menyelesaikan hal yang baru terlihat ketika kodenya ada.
+Sembilan hal diputuskan di sini; semuanya menuntut suntingan spec pada Tugas 5. D1–D3 diputuskan di muka; D4 dan D5 ditambahkan setelah tinjauan Tugas 1, D6–D8 saat menulis adaptor pada Tugas 2, dan D9 pada Tugas 5 sendiri — keempat kelompok terakhir menyelesaikan hal yang baru terlihat ketika kodenya ada.
 
 ### D1 — Butir manual tanpa nilai: ditandai, bukan dilewati
 
@@ -134,6 +134,22 @@ Pencocokan kembali ke `kolom_asal` memakai pangkas spasi tepi saja — sejalan d
 **Keputusan:** `parameter` adalah sumber kebenaran; `skor_maks` dipertahankan sebagai kolom bacaan manusia.
 
 Kolomnya tidak dihapus karena admin memang memeriksa sheet dengan mata, dan skor maksimum adalah hal pertama yang dicari saat mencurigai sebuah angka. Tetapi karena ia tidak berwenang, adaptor **wajib menandai** bila isinya berselisih dengan yang diturunkan `skorMaksAturan`. Nilai yang berselisih dan didiamkan lebih buruk daripada kolom yang tidak ada: ia membuat pembaca yakin pada angka yang tidak dipakai menghitung apa pun.
+
+### D9 — Pengenal dicocokkan peka huruf, dan beda ejaan ditandai
+
+Mutasi K9 pada Tugas 5 Langkah 3 memperlihatkan bahwa mencocokkan `sesi_id` tanpa memedulikan huruf besar-kecil lolos seluruh suite: perilakunya tidak pernah ditentukan, hanya kebetulan. Pengenal-pengenal ini diketik admin ke dalam sheet dengan tangan, jadi ejaan yang berbeda hurufnya memang akan terjadi.
+
+**Keputusan:** `sesi_id`, `proyek_id`, dan `skema_id` dicocokkan **peka huruf besar-kecil**. Ejaan yang hanya berbeda hurufnya ditandai sebagai **peringatan**, tanpa menjatuhkan barisnya.
+
+Menyeragamkan huruf membuat `S1` dan `s1` menjadi satu sesi. Itu bisa benar — dan bisa juga melebur dua sesi yang sengaja dibedakan begitu. Yang membuat pilihannya tidak seimbang adalah arah kesalahannya: peleburan tidak bisa dibatalkan setelah nilainya tercampur, sementara pencocokan persis hanya menolak sesuatu yang masih bisa diperbaiki admin.
+
+Harga dari pencocokan persis dibayar di tempat lain, dan harus dibayar: beda ejaan berbunyi "tidak ditemukan" sementara barisnya terpampang di layar. Itu cara tercepat membuat orang menyimpulkan backend-nya rusak lalu mencari-cari kerusakan yang tidak ada. Karena itu penolakan backend **menyebutkan ejaan yang ada di sheet**, dan adaptor menandai beda ejaan sebagai peringatan alih-alih mendiamkannya.
+
+Peringatan, bukan penolakan baris — dan ini yang membedakannya dari pengenal yang benar-benar kembar. Pada pengenal kembar tidak ada cara memilih di antara dua baris, sehingga keduanya dijatuhkan. Di sini kedua barisnya terbaca benar; yang keliru justru pembacanya, yang mengira keduanya satu hal.
+
+`skema_id` adalah yang paling berbahaya dari ketiganya. Sebuah sesi menunjuk `SK1` lalu hanya menemukan separuh butirnya karena sisanya tertulis di bawah `sk1`. Nilainya menjadi rata-rata terbobot atas separuh instrumen — persis cacat utama yang rencana ini perbaiki — dan ia **tampak wajar**.
+
+Aturan 4 repo (normalisasi sebelum mencocokkan) tetap berlaku penuh untuk **email** dan **opsi jawaban**; di sana menyeragamkan huruf memang menyatukan hal yang sama, dan §6.1 serta §7.1 menuntutnya. Pengenal adalah pengecualian yang diputuskan sadar di sini, bukan kelalaian.
 
 ---
 
@@ -363,7 +379,7 @@ Sekarang ia hanya memeriksa `respondenId`. Kriteria yang tidak ada di `Skema` ma
 
 - [ ] **Langkah 3: Putuskan kepekaan huruf pada `sesi_id`**
 
-Mutasi K9 (pencocokan `sesi_id` tanpa peduli huruf besar-kecil) lolos seluruh suite, artinya perilakunya tidak ditentukan. Putuskan, buat ujinya, dan tulis alasannya. Pertimbangkan bahwa `sesi_id` diketik admin ke dalam sheet dengan tangan.
+Mutasi K9 (pencocokan `sesi_id` tanpa peduli huruf besar-kecil) lolos seluruh suite, artinya perilakunya tidak ditentukan. Putuskan, buat ujinya, dan tulis alasannya. Pertimbangkan bahwa `sesi_id` diketik admin ke dalam sheet dengan tangan. Keputusannya tercatat sebagai **D9**, dan mencakup `proyek_id` serta `skema_id` juga.
 
 - [ ] **Langkah 4: Sunting spec**
 
@@ -373,6 +389,7 @@ Pakai gaya catatan koreksi §5.2/§6.1.
 - **§6.3** — baris `Penilaian` untuk kolom non-`manual` berlaku sebagai koreksi yang menimpa skor otomatis, dan koreksinya tercatat (D2).
 - **§6.2** — kolom `perlakuan_kosong` (D6) dan kedudukan `skor_maks` sebagai bacaan manusia saja (D8).
 - **§6.1** — bentuk kolom `jawaban_*` dan `meta_*` (D7).
+- **§6.4 dan §6.5** — `sesi_id`, `proyek_id`, dan `skema_id` dicocokkan peka huruf besar-kecil, dan beda ejaan ditandai sebagai peringatan (D9).
 - **§8.1 dan §8.2** — penyebut: butir menunggu dikeluarkan, dan responden yang punya butir menunggu wajib dapat dikenali. Indeks merata-ratakan rasio per pasangan, dan bobot dimensi hanya dari butir yang benar-benar menyumbang pasangan (D5).
 
 - [ ] **Langkah 5: Commit**
