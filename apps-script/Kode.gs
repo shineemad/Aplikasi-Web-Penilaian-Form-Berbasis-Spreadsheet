@@ -1071,7 +1071,8 @@ function putuskanIzin_(emailSesi, aksi, sesi) {
       'Sesi "' +
         sesi.sesiId +
         '" tidak ditemukan. Periksa sesiId yang dikirim, dan pastikan sheet Sesi ada beserta ' +
-        'kolom sesi_id, status, penilai, dan admin.',
+        'kolom sesi_id, status, penilai, dan admin.' +
+        petunjukBedaHuruf_(sesi),
     );
   }
 
@@ -1138,6 +1139,26 @@ function putuskanIzin_(emailSesi, aksi, sesi) {
   return { izin: true };
 }
 
+/**
+ * Kalimat tambahan ketika sesi yang diminta hanya berbeda huruf besar-kecil
+ * dari baris yang ada (koreksi D9).
+ *
+ * Pencocokan pengenal sengaja peka huruf, sehingga "s1" memang bukan "S1".
+ * Tetapi penolakan "tidak ditemukan" sementara barisnya terpampang di layar
+ * adalah cara tercepat membuat orang menyimpulkan backend-nya rusak, lalu
+ * mencari sebabnya di tempat yang keliru.
+ */
+function petunjukBedaHuruf_(sesi) {
+  if (sesi.bedaHuruf === '') return '';
+  return (
+    ' Yang ada di sheet Sesi adalah "' +
+    sesi.bedaHuruf +
+    '", yang hanya berbeda huruf besar-kecil. Pengenal dicocokkan persis supaya dua sesi yang ' +
+    'sengaja dibedakan begitu tidak pernah terlebur menjadi satu, jadi tulislah ejaan yang sama ' +
+    'persis — atau samakan penulisannya di sheet Sesi.'
+  );
+}
+
 /** Satu-satunya sumber identitas (spec §9.2). Muatan permintaan tidak pernah dilihat. */
 function emailPemanggil_() {
   var pengguna = Session.getActiveUser();
@@ -1158,6 +1179,10 @@ function emailPemanggil_() {
  * Kebijakan izin tidak memerlukan kolom itu, jadi memasukkannya ke kolom wajib
  * akan membuat sheet tanpa `skema_id` menolak penulisan penilaian juga —
  * padahal yang benar-benar terhalang hanya pembacaan rekap.
+ *
+ * Pencocokan `sesi_id` peka huruf besar-kecil (koreksi D9). Ejaan yang hanya
+ * berbeda hurufnya tidak diterima, tetapi dicatat pada `bedaHuruf` supaya
+ * penolakannya bisa menyebutkannya.
  */
 function cariSesi_(sesiId) {
   var kunci = rapikanTeks_(sesiId);
@@ -1165,6 +1190,7 @@ function cariSesi_(sesiId) {
     ada: false,
     cacat: '',
     sesiId: kunci,
+    bedaHuruf: '',
     status: '',
     penilai: [],
     admin: [],
@@ -1203,9 +1229,17 @@ function cariSesi_(sesiId) {
         (kolomSkema.length === 0 ? 'tidak ada' : 'muncul ' + kolomSkema.length + ' kali');
 
   var ketemu = null;
+  var mirip = '';
+  var kunciKecil = kunci.toLowerCase();
   for (var b = 1; b < kisi.length; b += 1) {
     var baris = kisi[b];
-    if (rapikanTeks_(baris[posisi['sesi_id']]) !== kunci) continue;
+    var tertulis = rapikanTeks_(baris[posisi['sesi_id']]);
+    if (tertulis !== kunci) {
+      if (mirip === '' && tertulis !== '' && tertulis.toLowerCase() === kunciKecil) {
+        mirip = tertulis;
+      }
+      continue;
+    }
     if (ketemu !== null) {
       return cacatSesi_(kunci, 'sesi_id "' + kunci + '" muncul pada lebih dari satu baris');
     }
@@ -1213,6 +1247,7 @@ function cariSesi_(sesiId) {
       ada: true,
       cacat: '',
       sesiId: kunci,
+      bedaHuruf: '',
       status: rapikanKecil_(baris[posisi['status']]),
       penilai: daftarEmail_(baris[posisi['penilai']]),
       admin: daftarEmail_(baris[posisi['admin']]),
@@ -1227,7 +1262,9 @@ function cariSesi_(sesiId) {
       kolomStatus: posisi['status'] + 1,
     };
   }
-  return ketemu === null ? kosong : ketemu;
+  if (ketemu !== null) return ketemu;
+  kosong.bedaHuruf = mirip;
+  return kosong;
 }
 
 function cacatSesi_(sesiId, alasan) {
@@ -1235,6 +1272,7 @@ function cacatSesi_(sesiId, alasan) {
     ada: false,
     cacat: alasan,
     sesiId: sesiId,
+    bedaHuruf: '',
     status: '',
     penilai: [],
     admin: [],

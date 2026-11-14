@@ -352,6 +352,91 @@ describe('bacaRekap hanya menyerahkan baris milik sesi yang diminta', () => {
   });
 });
 
+/**
+ * Koreksi D9 — pencocokan pengenal peka huruf besar-kecil.
+ *
+ * Sebelum ini perilakunya tidak ditentukan: mutasi yang menyamakan huruf saat
+ * mencocokkan `sesi_id` lolos seluruh suite. Yang dipancang di sini bukan
+ * selera, melainkan bahwa "S1" dan "s1" tidak pernah dilebur diam-diam —
+ * peleburan itu persis yang dicegah §6.3 ketika `sesi_id` dimasukkan ke dalam
+ * kunci nilai berlaku.
+ */
+describe('pengenal dicocokkan peka huruf besar-kecil (D9)', () => {
+  const RESPONDEN_HURUF_KECIL: unknown[] = [
+    's1',
+    ID_ANI,
+    'ani@kampus.id',
+    'Ani',
+    'lengkap',
+    '2026-10-01T00:00:00.000Z',
+  ];
+
+  const PENILAIAN_HURUF_KECIL: unknown[] = [
+    3,
+    's1',
+    ID_ANI,
+    KOLOM_BERSPASI,
+    0,
+    '',
+    'penilai@kampus.id',
+    '2026-10-02T00:00:00.000Z',
+  ];
+
+  const SKEMA_HURUF_KECIL: unknown[] = [
+    'sk1',
+    'Butir Z',
+    'Butir Z',
+    'kemudahan',
+    'peta-opsi',
+    PETA_YA_TIDAK,
+    1,
+    1,
+    'abaikan',
+  ];
+
+  it('tidak menarik baris Responden maupun Penilaian ber-sesi_id huruf kecil', () => {
+    const { balasan } = panggilRekap({
+      ss: buatRuangKerja({
+        responden: [KEPALA_RESPONDEN, RESPONDEN_S1_ANI, RESPONDEN_HURUF_KECIL],
+        penilaian: [KEPALA_PENILAIAN, PENILAIAN_S1, PENILAIAN_HURUF_KECIL],
+      }),
+    });
+    expect(balasan.ok).toBe(true);
+    expect(kolomDari(kisiWajib(balasan, 'responden'), 'sesi_id')).toEqual(['S1']);
+    expect(kolomDari(kisiWajib(balasan, 'penilaian'), 'penilaian_id')).toEqual([1]);
+  });
+
+  it('tidak menarik baris Skema ber-skema_id huruf kecil', () => {
+    // Kalau huruf disamakan, butir "Butir Z" yang tidak pernah dipilih admin
+    // ikut menyumbang bobot dan nilainya tetap tampak wajar.
+    const { balasan } = panggilRekap({
+      ss: buatRuangKerja({ skema: [KEPALA_SKEMA, SKEMA_SK1_A, SKEMA_HURUF_KECIL, SKEMA_SK1_B] }),
+    });
+    expect(kolomDari(kisiWajib(balasan, 'skema'), 'kolom_asal')).toEqual([
+      KOLOM_BERSPASI,
+      'Butir B',
+    ]);
+  });
+
+  it('menolak permintaan yang hurufnya tidak sama dengan baris sheet Sesi', () => {
+    const { balasan } = panggilRekap({ sesiId: 's1' });
+    expect(balasan.ok).toBe(false);
+    expect(balasan.kode).toBe('SESI_TIDAK_ADA');
+  });
+
+  it('menyebutkan ejaan yang hanya berbeda huruf pada penolakannya', () => {
+    // Penolakan "tidak ditemukan" sementara barisnya terlihat jelas di layar
+    // adalah cara tercepat membuat orang menyimpulkan backend-nya rusak.
+    const { balasan } = panggilRekap({ sesiId: 's1' });
+    expect(balasan.pesan).toContain('"S1"');
+    expect(balasan.pesan).toMatch(/huruf besar-kecil/i);
+  });
+
+  it('tetap menerima ejaan yang persis sama', () => {
+    expect(panggilRekap({ sesiId: 'S1' }).balasan.ok).toBe(true);
+  });
+});
+
 describe('baris kepala ikut diserahkan', () => {
   // Adaptor menerima kisi lengkap termasuk kepalanya dan mencari kolomnya dari
   // situ. Kisi tanpa kepala membuat baris pertama dibaca sebagai nama kolom,

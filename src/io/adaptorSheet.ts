@@ -432,6 +432,36 @@ export function bacaSkema(kisi: unknown[][]): HasilAdaptor<Skema> {
     else sudah.push(satu);
   }
 
+  // D9 setingkat skema, bukan setingkat baris: satu `skema_id` memang menempati
+  // banyak baris, jadi `bacaSheet` tidak bisa menjaganya. Ini yang paling
+  // berbahaya dari ketiga pengenal — sesi menunjuk "SK1" lalu hanya menemukan
+  // separuh butirnya, dan nilainya menjadi rata-rata atas separuh instrumen.
+  const ejaanPerKecil = new Map<string, string[]>();
+  for (const skemaId of perSkema.keys()) {
+    const kecil = skemaId.toLowerCase();
+    const sudah = ejaanPerKecil.get(kecil);
+    if (sudah === undefined) ejaanPerKecil.set(kecil, [skemaId]);
+    else sudah.push(skemaId);
+  }
+  for (const ejaan of ejaanPerKecil.values()) {
+    if (ejaan.length < 2) continue;
+    const daftar = ejaan.map((satu) => `"${satu}"`).join(' dan ');
+    for (const skemaId of ejaan) {
+      const kelompok = perSkema.get(skemaId);
+      masalah.push({
+        nomorBaris: kelompok?.[0]?.isi.nomorBaris ?? 1,
+        jenis: 'peringatan',
+        skemaId,
+        pesan:
+          `Kolom "skema_id" sheet Skema memuat ${daftar}, yang hanya berbeda huruf besar-kecil. ` +
+          'Pengenal dicocokkan persis, jadi butirnya terbelah menjadi dua skema — dan sesi yang ' +
+          'menunjuk salah satu ejaan hanya akan menemukan separuh instrumennya, sehingga ' +
+          'nilainya dihitung dari butir yang lebih sedikit tanpa terlihat salah. Samakan ' +
+          'ejaannya di Spreadsheet bila keduanya memang satu skema.',
+      });
+    }
+  }
+
   const baris: Skema[] = [];
   for (const [skemaId, kelompok] of perSkema) {
     const menjatuhkan = new Set<number>();
@@ -1097,6 +1127,11 @@ function bacaSheet<T>(
       ? new Map<number, string>()
       : keluhanKunciKembar(kisi, kepala.peta, namaSheet, kunci);
 
+  const bedaHuruf =
+    kunci === null
+      ? new Map<number, string>()
+      : peringatanBedaHuruf(kisi, kepala.peta, namaSheet, kunci.nama, kunci.akibat);
+
   const baris: T[] = [];
   const masalah: MasalahBaris[] = [];
 
@@ -1118,8 +1153,11 @@ function bacaSheet<T>(
     };
 
     const hasil = bangun(ambil, nomorBaris, isi);
-    if (hasil.ok) baris.push(hasil.baris);
-    else masalah.push({ nomorBaris, jenis: 'baris', pesan: hasil.pesan });
+    if (hasil.ok) {
+      baris.push(hasil.baris);
+      const beda = bedaHuruf.get(nomorBaris);
+      if (beda !== undefined) masalah.push({ nomorBaris, jenis: 'peringatan', pesan: beda });
+    } else masalah.push({ nomorBaris, jenis: 'baris', pesan: hasil.pesan });
   }
 
   return { baris, masalah };
@@ -1173,6 +1211,60 @@ function keluhanKunciKembar(
           `dibedakan, sehingga ${kunci.akibat}. Tak satu pun di antaranya dibaca, karena memilih ` +
           'salah satunya berarti hasilnya ditentukan urutan baris. Beri pengenal berbeda pada ' +
           'salah satunya di Spreadsheet.',
+      );
+    }
+  }
+  return hasil;
+}
+
+/**
+ * Nomor baris yang pengenalnya hanya berbeda huruf besar-kecil dari baris lain,
+ * dipetakan ke peringatannya (koreksi D9).
+ *
+ * Berbeda dari pengenal yang benar-benar kembar: di sana tidak ada cara memilih
+ * sehingga barisnya dijatuhkan, di sini **kedua barisnya terbaca benar** dan
+ * yang keliru justru pembacanya. `S1` dan `s1` memang dua sesi berbeda, tetapi
+ * hampir selalu salah ketik — dan akibatnya separuh data menggantung di bawah
+ * ejaan yang tidak pernah ditunjuk siapa pun.
+ */
+function peringatanBedaHuruf(
+  kisi: unknown[][],
+  peta: Map<string, number>,
+  namaSheet: string,
+  namaKunci: string,
+  akibat: string,
+): Map<number, string> {
+  const hasil = new Map<number, string>();
+  const kolom = peta.get(namaKunci);
+  if (kolom === undefined) return hasil;
+
+  const perKecil = new Map<string, { ejaan: Set<string>; nomor: number[] }>();
+  for (let i = 1; i < kisi.length; i += 1) {
+    const isi = kisi[i];
+    if (isi === undefined || barisKosong(isi)) continue;
+
+    const nilai = rapikan(isi[kolom]);
+    if (nilai === '') continue;
+
+    const kecil = nilai.toLowerCase();
+    const sudah = perKecil.get(kecil);
+    if (sudah === undefined) perKecil.set(kecil, { ejaan: new Set([nilai]), nomor: [i + 1] });
+    else {
+      sudah.ejaan.add(nilai);
+      sudah.nomor.push(i + 1);
+    }
+  }
+
+  for (const { ejaan, nomor } of perKecil.values()) {
+    if (ejaan.size < 2) continue;
+    const daftar = [...ejaan].map((satu) => `"${satu}"`).join(' dan ');
+    for (const satu of nomor) {
+      hasil.set(
+        satu,
+        `Kolom "${namaKunci}" sheet ${namaSheet} memuat ${daftar}, yang hanya berbeda huruf ` +
+          `besar-kecil. Pengenal dicocokkan persis, jadi keduanya dibaca sebagai dua hal ` +
+          `berbeda — dan bila itu tidak disengaja, ${akibat}. Barisnya tetap dibaca; samakan ` +
+          'ejaannya di Spreadsheet bila keduanya memang satu.',
       );
     }
   }

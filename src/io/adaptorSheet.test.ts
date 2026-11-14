@@ -511,15 +511,16 @@ describe('bacaSesi', () => {
   });
 
   it('tidak menganggap sesi_id beda huruf besar-kecil sebagai kembar', () => {
-    // Kepekaan hurufnya belum diputuskan (Tugas 5 Langkah 3); menyeragamkannya
-    // di pendeteksi kembar berarti memutuskannya diam-diam.
+    // Kepekaan hurufnya kini diputuskan (D9): keduanya dibaca sebagai dua sesi
+    // berbeda, jadi ini bukan "kembar" dan barisnya tidak dijatuhkan. Yang
+    // muncul hanya peringatan, karena beda ejaan begitu hampir selalu salah ketik.
     const hasil = bacaSesi([
       KEPALA_SESI,
       ['pre', 'p1', 'Pre-Test', 's1', 'indeks', 'berjalan', 'a@x.id', 'b@x.id'],
       ['PRE', 'p1', 'Pre-Test', 's1', 'indeks', 'berjalan', 'a@x.id', 'b@x.id'],
     ]);
 
-    expect(hasil.masalah).toEqual([]);
+    expect(hasil.masalah.map((satu) => satu.jenis)).toEqual(['peringatan', 'peringatan']);
     expect(hasil.baris.map((satu) => satu.sesiId)).toEqual(['pre', 'PRE']);
   });
 });
@@ -1391,6 +1392,92 @@ describe('bacaSkema', () => {
     expect(hasil.masalah).toHaveLength(1);
     expect(hasil.masalah[0]?.jenis).toBe('peringatan');
     expect(hasil.masalah[0]?.pesan).toMatch(/Infinity/);
+  });
+});
+
+/**
+ * Koreksi D9 — pengenal dicocokkan peka huruf besar-kecil, dan ejaan yang hanya
+ * berbeda hurufnya ditandai.
+ *
+ * Dua sisi yang sama-sama harus dipancang. Melebur "S1" dan "s1" membatalkan
+ * apa yang dijaga §6.3 ketika `sesi_id` dimasukkan ke dalam kunci nilai
+ * berlaku: nilai Pre-Test dan Post-Test seseorang kembali bertabrakan, dan
+ * kolom selisih salah tanpa satu pun peringatan. Membiarkan keduanya berdiri
+ * tanpa dikatakan membuat kekeliruan ketik manusia tak terlihat sama sekali.
+ */
+describe('kepekaan huruf pada pengenal (D9)', () => {
+  const sesiDuaEjaan = (): ReturnType<typeof bacaSesi> =>
+    bacaSesi([
+      KEPALA_SESI,
+      ['S1', 'P1', 'Pre-Test', 'SK1', 'indeks', 'berjalan', 'a@x.id', 'b@x.id'],
+      ['s1', 'P1', 'Post-Test', 'SK1', 'indeks', 'berjalan', 'a@x.id', 'b@x.id'],
+    ]);
+
+  it('membaca dua sesi yang hanya berbeda huruf sebagai dua sesi', () => {
+    expect(sesiDuaEjaan().baris.map((satu) => satu.sesiId)).toEqual(['S1', 's1']);
+  });
+
+  it('menandainya sebagai peringatan, bukan menjatuhkan barisnya', () => {
+    // Berbeda dari pengenal yang benar-benar kembar: di sana tidak ada cara
+    // memilih, di sini keduanya dibaca benar dan yang keliru justru pembacanya.
+    const masalah = sesiDuaEjaan().masalah;
+    expect(masalah.map((satu) => satu.jenis)).toEqual(['peringatan', 'peringatan']);
+    expect(masalah[0]?.pesan).toMatch(/huruf besar-kecil/i);
+    expect(masalah[0]?.pesan).toContain('"S1"');
+    expect(masalah[0]?.pesan).toContain('"s1"');
+  });
+
+  it('tidak mengeluh ketika ejaannya memang hanya satu', () => {
+    const hasil = bacaSesi([
+      KEPALA_SESI,
+      ['S1', 'P1', 'Pre-Test', 'SK1', 'indeks', 'berjalan', 'a@x.id', 'b@x.id'],
+      ['S2', 'P1', 'Post-Test', 'SK1', 'indeks', 'berjalan', 'a@x.id', 'b@x.id'],
+    ]);
+    expect(hasil.masalah).toEqual([]);
+  });
+
+  it('menandai proyek_id yang hanya berbeda huruf', () => {
+    const hasil = bacaProyek([
+      KEPALA_PROYEK,
+      ['P1', 'Literasi', 'S1', 'S1', 'S2', ''],
+      ['p1', 'Literasi', 'S2', '', '', ''],
+    ]);
+    expect(hasil.baris.map((satu) => satu.proyekId)).toEqual(['P1', 'p1']);
+    expect(hasil.masalah.map((satu) => satu.jenis)).toEqual(['peringatan', 'peringatan']);
+  });
+
+  it('menandai skema_id yang hanya berbeda huruf, menyebut skema mana', () => {
+    // Yang paling berbahaya dari ketiganya: sesi menunjuk "SK1" dan menemukan
+    // separuh butirnya, sementara separuh lagi tersimpan di bawah "sk1".
+    // Nilainya menjadi rata-rata atas separuh instrumen, dan tampak wajar.
+    const hasil = bacaSkema([
+      KEPALA_SKEMA,
+      ['SK1', 'Q1', 'Butir 1', 'd', 'peta-opsi', '{"peta":{"ya":1},"skorMaks":1}', 1, 1, 'abaikan'],
+      ['sk1', 'Q2', 'Butir 2', 'd', 'peta-opsi', '{"peta":{"ya":1},"skorMaks":1}', 1, 1, 'abaikan'],
+    ]);
+
+    expect(hasil.baris.map((satu) => satu.skemaId)).toEqual(['SK1', 'sk1']);
+    const peringatan = hasil.masalah.filter((satu) => satu.jenis === 'peringatan');
+    expect(peringatan.map((satu) => satu.skemaId)).toEqual(['SK1', 'sk1']);
+    expect(peringatan[0]?.pesan).toMatch(/huruf besar-kecil/i);
+  });
+
+  it('tidak menyamakan huruf sesi_id pada Penilaian maupun Responden', () => {
+    // Keduanya tidak punya kunci baris, jadi tidak lewat penanda di atas; yang
+    // dijaga di sini hanya bahwa selnya tidak dikecilkan di jalan.
+    const penilaian = bacaPenilaian([
+      KEPALA_PENILAIAN,
+      [1, 'S1', 'a1b2c3d4e5f60718', 'Esai', 80, '', 'guru@x.id', ''],
+      [2, 's1', 'a1b2c3d4e5f60718', 'Esai', 20, '', 'guru@x.id', ''],
+    ]);
+    expect(penilaian.baris.map((satu) => satu.sesiId)).toEqual(['S1', 's1']);
+
+    const responden = bacaResponden([
+      KEPALA_RESPONDEN,
+      ['S1', 'a1b2c3d4e5f60718', 'ani@x.id', 'Ani', 'lengkap', ''],
+      ['s1', 'a1b2c3d4e5f60718', 'ani@x.id', 'Ani', 'lengkap', ''],
+    ]);
+    expect(responden.baris.map((satu) => satu.sesiId)).toEqual(['S1', 's1']);
   });
 });
 
