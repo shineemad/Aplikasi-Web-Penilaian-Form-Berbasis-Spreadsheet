@@ -15,7 +15,7 @@ import {
   type SheetPalsu,
   type SpreadsheetPalsu,
 } from './googlePalsu';
-import { bacaSumberKode, muatKode } from './sandbox';
+import { bacaSumberKode, muatKode, muatSumber, namaBertipeFungsi } from './sandbox';
 
 interface Balasan {
   ok: boolean;
@@ -90,38 +90,121 @@ const mendeklarasiFungsiPrivat = (isi: string): boolean =>
  * menyembunyikannya. Akhiran itu penjaga keamanan, bukan adat: satu fungsi
  * tanpa garis bawah berarti satu bagian kebijakan yang bisa dipanggil langsung,
  * melewati seluruh pemeriksaan peran di `doPost`.
- *
- * Hanya pengikatan di kolom pertama yang dihitung, karena hanya itu yang
- * benar-benar menjadi global di Apps Script.
  */
 const TITIK_MASUK_GOOGLE = ['doPost', 'doGet'];
 
-const POLA_GLOBAL: RegExp[] = [
-  /^function\s*\*?\s*([\w$]+)\s*\(/gm,
-  /^(?:var|let|const)\s+([\w$]+)\s*=\s*(?:async\s*)?(?:function\b|\([^)]*\)\s*=>|[\w$]+\s*=>)/gm,
-];
+/**
+ * Kata yang tidak boleh diumpankan ke `typeof`; `typeof import` adalah
+ * SyntaxError, dan satu saja di antaranya akan menjatuhkan seluruh sensor.
+ */
+const KATA_KUNCI = new Set([
+  'await',
+  'break',
+  'case',
+  'catch',
+  'class',
+  'const',
+  'continue',
+  'debugger',
+  'default',
+  'delete',
+  'do',
+  'else',
+  'enum',
+  'export',
+  'extends',
+  'false',
+  'finally',
+  'for',
+  'function',
+  'if',
+  'implements',
+  'import',
+  'in',
+  'instanceof',
+  'interface',
+  'let',
+  'new',
+  'null',
+  'package',
+  'private',
+  'protected',
+  'public',
+  'return',
+  'static',
+  'super',
+  'switch',
+  'this',
+  'throw',
+  'true',
+  'try',
+  'typeof',
+  'var',
+  'void',
+  'while',
+  'with',
+  'yield',
+]);
 
-const globalYangTerbuka = (sumber: string): string[] => {
-  const hasil: string[] = [];
-  for (const pola of POLA_GLOBAL) {
-    for (const cocok of sumber.matchAll(pola)) {
-      const nama = cocok[1];
-      if (nama === undefined || nama.endsWith('_')) continue;
-      if (TITIK_MASUK_GOOGLE.includes(nama)) continue;
-      hasil.push(nama);
-    }
+const POLA_NAMA = /[A-Za-z_$][\w$]*/g;
+
+/** Setiap kata yang berbentuk nama, dari mana pun di dalam sumber. */
+const namaCalon = (sumber: string): string[] => {
+  const hasil = new Set<string>();
+  for (const cocok of sumber.matchAll(POLA_NAMA)) {
+    if (!KATA_KUNCI.has(cocok[0])) hasil.add(cocok[0]);
   }
-  return hasil;
+  return [...hasil];
 };
 
-function muatDenganGooglePalsu(): Record<string, unknown> {
+const globalPalsu = (): Record<string, unknown> => {
   const ss = buatSpreadsheetPalsu({ Sesi: SESI_BAWAAN, Penilaian: [KEPALA_PENILAIAN] });
-  return muatKode({
+  return {
     Session: buatSessionPalsu('admin@kampus.id'),
     SpreadsheetApp: buatSpreadsheetAppPalsu(ss),
     LockService: buatLockServicePalsu(),
     ContentService: buatContentServicePalsu(),
-  });
+  };
+};
+
+/**
+ * Fungsi global yang ditinggalkan `sumber`, ditanyakan kepada runtime alih-alih
+ * dibaca dari teksnya.
+ *
+ * Pendahulunya mencocokkan pola pada kolom pertama, dan enam bentuk melewatinya
+ * sambil tetap menjadi global sungguhan: deklarasi berindentasi, alias
+ * `var buka = putuskanIzin_;`, dua deklarator dalam satu `var`, IIFE yang
+ * mengembalikan fungsi, komentar di depan `function`, dan `globalThis.x = …`.
+ * Setiap pola baru hanya menambal satu bentuk dan meninggalkan bentuk ketujuh.
+ *
+ * Yang tersisa dari teks hanyalah **daftar calon nama** — dan daftar itu tidak
+ * bisa dielakkan, karena sebuah pengikatan mustahil ada tanpa namanya muncul di
+ * dalam sumber. Keputusan "ini fungsi global atau bukan" diserahkan kepada
+ * konteks vm: enumerasi properti menangkap `function`, `var`, dan `globalThis`,
+ * sedangkan penilaian `typeof` di dalam konteks ikut menangkap `let`, `const`,
+ * dan `class` yang tidak pernah menjadi properti objek global.
+ *
+ * Konteks pembanding dijalankan tanpa sumber sama sekali, sehingga `Object`,
+ * `JSON`, `isNaN`, dan seluruh global bawaan maupun suntikan uji gugur dengan
+ * sendirinya — tanpa daftar pengecualian yang harus dirawat tangan.
+ */
+const globalYangTerbuka = (sumber: string): string[] => {
+  const calon = namaCalon(sumber);
+  const bawaan = new Set(namaBertipeFungsi(muatSumber('', globalPalsu(), 'pembanding'), calon));
+
+  const konteks = muatSumber(sumber, globalPalsu(), 'sensor-global');
+  const terbuka = new Set(namaBertipeFungsi(konteks, calon));
+  for (const nama of Object.getOwnPropertyNames(konteks)) {
+    if (typeof konteks[nama] === 'function') terbuka.add(nama);
+  }
+
+  return [...terbuka].filter(
+    (nama) => !bawaan.has(nama) && !nama.endsWith('_') && !TITIK_MASUK_GOOGLE.includes(nama),
+  );
+};
+
+function muatDenganGooglePalsu(): Record<string, unknown> {
+  return muatKode(globalPalsu());
 }
 
 function ambilDoPost(konteks: Record<string, unknown>): (e: unknown) => KeluaranTeksPalsu {
@@ -455,18 +538,52 @@ describe('sensor fungsi global itu sendiri', () => {
     expect(globalYangTerbuka('var siapkan = function () {};')).toEqual(['siapkan']);
     expect(globalYangTerbuka('const siapkan = () => {};')).toEqual(['siapkan']);
     expect(globalYangTerbuka('let siapkan = async (e) => {};')).toEqual(['siapkan']);
+    expect(globalYangTerbuka('class Siapkan {}')).toEqual(['Siapkan']);
   });
 
   it('melewatkan titik masuk Google, nama bergaris bawah, dan fungsi bersarang', () => {
     expect(globalYangTerbuka('function doPost(e) {}')).toEqual([]);
     expect(globalYangTerbuka('function doGet(e) {}')).toEqual([]);
     expect(globalYangTerbuka('function putuskanIzin_(e) {}')).toEqual([]);
-    expect(globalYangTerbuka('  function dalam(e) {}')).toEqual([]);
+    expect(globalYangTerbuka('function luar_() { function dalam(e) {} }')).toEqual([]);
   });
 
   it('tidak menganggap tetapan data sebagai fungsi', () => {
     expect(globalYangTerbuka("var NAMA_SHEET_SESI = 'Sesi';")).toEqual([]);
     expect(globalYangTerbuka('var SYARAT_AKSI = { bacaRekap: {} };')).toEqual([]);
     expect(globalYangTerbuka("var KOLOM_SESI_WAJIB = ['sesi_id'];")).toEqual([]);
+  });
+
+  it('tidak menganggap global bawaan maupun suntikan uji sebagai kebocoran', () => {
+    // Kode.gs memakai Object, JSON, String, dan isNaN; konteks uji menyuntikkan
+    // SpreadsheetApp dan kawan-kawan. Tanpa konteks pembanding, semuanya akan
+    // terbaca sebagai fungsi global yang bocor dan sensornya tidak akan pernah
+    // bisa hijau — lalu dimatikan orang berikutnya.
+    const sumber = 'var x_ = JSON.stringify(Object.keys({})) + String(isNaN(1));';
+    expect(globalYangTerbuka(sumber)).toEqual([]);
+    expect(globalYangTerbuka('var y_ = SpreadsheetApp.getActive();')).toEqual([]);
+  });
+
+  describe('enam bentuk yang melewati sensor tekstual pendahulunya', () => {
+    // Keenamnya benar-benar menjadi global di vm. Pola kolom pertama
+    // melewatkan semuanya; yang menangkapnya di sini adalah runtime.
+    it.each([
+      ['deklarasi berindentasi', '  function berindentasi(e) {}', 'berindentasi'],
+      [
+        'alias fungsi privat',
+        'function putuskanIzin_() {}\nvar bukaIzin = putuskanIzin_;',
+        'bukaIzin',
+      ],
+      ['dua deklarator dalam satu var', 'var satu_ = function () {}, dua = function () {};', 'dua'],
+      [
+        'IIFE yang mengembalikan fungsi',
+        'var dariIife = (function () { return function () {}; })();',
+        'dariIife',
+      ],
+      ['komentar di depan function', '/* catatan */ function berkomentar(e) {}', 'berkomentar'],
+      ['pemberian lewat globalThis', "globalThis['lewatGlobal'] = function () {};", 'lewatGlobal'],
+    ])('menangkap %s', (_nama, sumber, bocor) => {
+      expect(globalYangTerbuka(sumber)).toContain(bocor);
+    });
   });
 });
