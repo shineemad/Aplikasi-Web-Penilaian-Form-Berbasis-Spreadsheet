@@ -418,6 +418,14 @@ export function bacaResponden(kisi: unknown[][]): HasilAdaptor<BarisResponden> {
  * opsinya bernilai 7 pada skala 0..5 akan menghasilkan nilai 140 tanpa satu pun
  * peringatan, dan bobot negatif menghasilkan `null` yang tampak seperti data
  * yang belum masuk.
+ *
+ * **Pemeriksaannya belum lengkap, dan pemanggil wajib tahu batasnya.** Daftar
+ * respondennya kosong di sini karena adaptor memang belum membacanya, sehingga
+ * dua jenis masalah mustahil muncul: `kolom-tidak-ada` dan `opsi-tak-dikenal`.
+ * Siapa pun yang menyambung `bacaSkema` langsung ke `bangunNilaiSesi` akan
+ * mendapat angka yang bersih tetapi salah — `kolom_asal: q1` melawan kepala
+ * `jawaban_Q1` menghasilkan nilai 100 tanpa peringatan. Perakit rekap wajib
+ * menjalankan ulang `periksaSkema(skema, responden)` dengan responden sungguhan.
  */
 export function bacaSkema(kisi: unknown[][]): HasilAdaptor<Skema> {
   const mentah = bacaSkemaMentah(kisi);
