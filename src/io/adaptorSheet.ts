@@ -260,8 +260,9 @@ export function bacaPenilaian(kisi: unknown[][]): HasilAdaptor<BarisPenilaian> {
 
 export function bacaSesi(kisi: unknown[][]): HasilAdaptor<BarisSesi> {
   return bacaSheet(kisi, 'Sesi', KOLOM_SESI, KUNCI_SESI, (ambil) => {
-    // Huruf besar-kecil pada sesi_id sengaja dipertahankan: perilakunya belum
-    // diputuskan, dan menyeragamkannya di sini memutuskannya diam-diam.
+    // Pengenal dicocokkan persis (D9): menyeragamkan hurufnya akan melebur dua
+    // sesi yang sengaja dibedakan, dan peleburan itu tak bisa dibatalkan setelah
+    // nilainya tercampur. Beda ejaan ditandai peringatan, bukan diam-diam disamakan.
     const sesiId = rapikan(ambil('sesi_id'));
     if (sesiId === '') {
       return tolak(keluhanKosong('sesi_id', 'sehingga sesi ini tidak punya pengenal.'));
@@ -1188,8 +1189,8 @@ function keluhanKunciKembar(
     const isi = kisi[i];
     if (isi === undefined || barisKosong(isi)) continue;
 
-    // Huruf besar-kecil sengaja dipertahankan: kepekaannya belum diputuskan,
-    // dan menyeragamkannya di sini memutuskannya diam-diam.
+    // Huruf besar-kecil dipertahankan (D9). Yang hanya berbeda hurufnya bukan
+    // kembar, melainkan urusan `peringatanBedaHuruf`.
     const nilai = rapikan(isi[kolom]);
     // Kunci kosong sudah dikeluhkan penerjemah barisnya dengan kalimat yang
     // lebih tepat; menyebutnya "kembar" hanya menggandakan keluhan itu.

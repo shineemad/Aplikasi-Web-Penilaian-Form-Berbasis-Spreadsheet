@@ -165,6 +165,8 @@ Dua kewajiban lahir dari pilihan ini, dan keduanya **ditegakkan saat impor**, bu
 - header yang memuat baris baru **ditolak**, karena ia memecah kepala kolom di sheet
 - dua header yang **bentrok setelah dipangkas** ditolak, dengan menyebutkan keduanya
 
+**Keduanya belum berjalan.** Jalur impor yang menulis `Responden` ke sheet belum dibangun, sehingga kedua penolakan di atas masih berupa tuntutan desain, bukan perilaku yang sudah ada. Yang sudah ada hanyalah penjaga terakhir di adaptor: kolom `jawaban_*`/`meta_*` yang kembar atau tak bernama ditolak saat dibaca — terlambat untuk mencegah kerusakannya, cukup untuk membuatnya terlihat.
+
 Pencocokan kembali ke `kolom_asal` memakai pangkas spasi tepi saja, sejalan dengan importer dan `Kode.gs` yang keduanya sudah memakai aturan itu. Perhatikan bahwa ini **berbeda** dari normalisasi §7.1, yang juga merapatkan spasi ganda dan menyamakan huruf. (Koreksi terhadap rumusan awal spec ini, diputuskan saat menyusun rencana "Rekap dan Nilai Manual".)
 
 ### 6.2 `Skema`
