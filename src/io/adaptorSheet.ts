@@ -637,6 +637,18 @@ function pesanMasalahSkema(masalah: MasalahSkema, skemaId: string): string {
         `penyebut setiap jawaban. Isi "skorMaks" (atau "maks") di parameter dengan angka di ` +
         `atas nol. ${penutup}`
       );
+    case 'skor-negatif': {
+      const daftar = masalah.negatif
+        .map((satu) => `"${satu.teks}" bernilai ${satu.skor}`)
+        .join(', ');
+      return (
+        `Skor ${butir} boleh turun di bawah nol: ${daftar}. Nilai akhir adalah jumlah rasio ` +
+        `terbobot dikali seratus, jadi skor negatif menarik nilai responden keluar dari skala ` +
+        `0–100 yang dijanjikan setiap tabel dan setiap kategori interpretasi — angka seperti ` +
+        `-300 tidak punya tafsiran sama sekali. Naikkan angkanya menjadi nol atau lebih. ` +
+        `${penutup}`
+      );
+    }
     case 'bobot-tidak-positif':
       return (
         `Kolom "bobot" ${butir} bernilai ${masalah.bobot}, padahal bobot adalah pengali ` +

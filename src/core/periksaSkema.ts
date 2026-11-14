@@ -19,6 +19,17 @@ export type MasalahSkema =
       /** Setiap opsi yang melampaui, dalam urutan penulisannya di peta. */
       opsi: { teks: string; skor: number }[];
     }
+  | {
+      jenis: 'skor-negatif';
+      kolomAsal: string;
+      label: string;
+      /**
+       * Setiap skor di bawah nol, dalam urutan penulisannya. Pada `peta-opsi`
+       * `teks` adalah nama opsinya; pada `manual` ia berisi `"min"`, satu-satunya
+       * tempat angka itu ditulis.
+       */
+      negatif: { teks: string; skor: number }[];
+    }
   | { jenis: 'bobot-tidak-positif'; kolomAsal: string; label: string; bobot: number }
   | {
       jenis: 'kunci-peta-kembar';
@@ -99,6 +110,23 @@ export function periksaSkema(skema: Skema, baris: JawabanResponden[]): HasilPeri
           tertinggi,
         });
       }
+    }
+
+    // §8.1 menjumlahkan rasio terbobot lalu mengalikannya seratus, jadi skor di
+    // bawah nol menarik nilai responden ke bawah nol juga — padahal setiap
+    // tabel, kategori interpretasi (§8.3), dan nama tipenya sendiri menjanjikan
+    // skala 0–100. Angka seperti −300 tidak punya tempat untuk ditafsirkan, dan
+    // `kategoriIndeks` diam-diam menjawab `null` untuknya.
+    const negatif: { teks: string; skor: number }[] = [];
+    if (butir.aturan.jenis === 'peta-opsi') {
+      for (const [teks, skor] of Object.entries(butir.aturan.peta)) {
+        if (skor < 0) negatif.push({ teks, skor });
+      }
+    } else if (butir.aturan.jenis === 'manual' && butir.aturan.min < 0) {
+      negatif.push({ teks: 'min', skor: butir.aturan.min });
+    }
+    if (negatif.length > 0) {
+      masalah.push({ jenis: 'skor-negatif', kolomAsal, label, negatif });
     }
 
     if (butir.aturan.jenis === 'peta-opsi') {

@@ -249,6 +249,57 @@ describe('periksaSkema membandingkan peta dengan skorMaks', () => {
   });
 });
 
+describe('periksaSkema menolak skor di bawah nol', () => {
+  // §8.1 menjumlahkan rasio terbobot lalu mengalikannya seratus. Skor negatif
+  // menarik nilai responden keluar dari skala 0–100 yang dijanjikan setiap
+  // tabel dan setiap kategori interpretasi (§8.3), dan `kategoriIndeks`
+  // menjawab `null` untuk angka seperti itu tanpa mengatakan apa-apa.
+
+  it('menyebut setiap opsi peta yang bernilai negatif', () => {
+    const menghukum: Aturan = {
+      jenis: 'peta-opsi',
+      skorMaks: 5,
+      peta: { ya: 1, tidak: -5, 'tidak tahu': -2 },
+    };
+    const hasil = periksaSkema(skema([{ ...BUTIR_LIKERT, aturan: menghukum }]), []);
+
+    const masalah = hasil.masalah.find((m) => m.jenis === 'skor-negatif');
+    if (masalah?.jenis !== 'skor-negatif') throw new Error('masalah tidak ditemukan');
+    expect(masalah.negatif).toEqual([
+      { teks: 'tidak', skor: -5 },
+      { teks: 'tidak tahu', skor: -2 },
+    ]);
+    expect(hasil.bolehDisimpan).toBe(false);
+  });
+
+  it('menolak rentang manual yang lantainya di bawah nol', () => {
+    const manual: Aturan = { jenis: 'manual', min: -10, maks: 10 };
+    const hasil = periksaSkema(skema([{ ...BUTIR_LIKERT, aturan: manual }]), []);
+
+    const masalah = hasil.masalah.find((m) => m.jenis === 'skor-negatif');
+    if (masalah?.jenis !== 'skor-negatif') throw new Error('masalah tidak ditemukan');
+    expect(masalah.negatif).toEqual([{ teks: 'min', skor: -10 }]);
+    expect(hasil.bolehDisimpan).toBe(false);
+  });
+
+  it('menerima nol sebagai lantai, baik pada peta maupun pada rentang manual', () => {
+    // Nol bukan hukuman melainkan lantai skala: jawaban yang salah memang tidak
+    // menyumbang apa-apa. Menolaknya akan membuang rancangan yang sah.
+    const nol: Aturan = { jenis: 'peta-opsi', skorMaks: 5, peta: { salah: 0, benar: 5 } };
+    const hasilPeta = periksaSkema(skema([{ ...BUTIR_LIKERT, aturan: nol }]), []);
+    expect(hasilPeta.masalah).toHaveLength(0);
+
+    const manual: Aturan = { jenis: 'manual', min: 0, maks: 10 };
+    const hasilManual = periksaSkema(skema([{ ...BUTIR_LIKERT, aturan: manual }]), []);
+    expect(hasilManual.masalah).toHaveLength(0);
+  });
+
+  it('tidak memeriksanya pada butir yang diabaikan', () => {
+    const hasil = periksaSkema(skema([{ ...BUTIR_LIKERT, aturan: { jenis: 'abaikan' } }]), []);
+    expect(hasil.masalah.map((m) => m.jenis)).not.toContain('skor-negatif');
+  });
+});
+
 describe('periksaSkema dan kolom bernama seperti properti Object', () => {
   it('tidak melempar saat sebagian responden tidak punya kolom bernama toString', () => {
     // `Record` mewarisi Object.prototype, sehingga jawaban['toString'] milik

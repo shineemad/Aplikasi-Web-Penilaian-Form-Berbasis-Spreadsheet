@@ -1100,8 +1100,10 @@ describe('bacaSkema', () => {
     expect(hasil.masalah[0]?.pesan).toMatch(/parameter/);
   });
 
-  it('menerima peta opsi yang bernilai nol maupun negatif', () => {
-    // Skala yang menghukum jawaban menyesatkan adalah rancangan yang sah.
+  it('menolak peta opsi yang bernilai negatif', () => {
+    // Nilai akhir adalah jumlah rasio terbobot dikali seratus (§8.1), jadi skor
+    // negatif menarik nilainya keluar dari skala 0–100 yang dijanjikan setiap
+    // tabel. Peta ini menghasilkan -300 tanpa satu angka pun tampak ganjil.
     const hasil = bacaSkema([
       KEPALA_SKEMA,
       [
@@ -1117,10 +1119,42 @@ describe('bacaSkema', () => {
       ],
     ]);
 
+    expect(hasil.baris).toEqual([]);
+    expect(hasil.masalah.some((satu) => /"salah" bernilai -1/.test(satu.pesan))).toBe(true);
+  });
+
+  it('menolak rentang manual yang min-nya di bawah nol', () => {
+    const hasil = bacaSkema([
+      KEPALA_SKEMA,
+      ['s1', 'Esai', 'Esai', 'd', 'manual', '{"min":-10,"maks":10}', 10, 1, 'nol'],
+    ]);
+
+    expect(hasil.baris).toEqual([]);
+    expect(hasil.masalah.some((satu) => /"min" bernilai -10/.test(satu.pesan))).toBe(true);
+  });
+
+  it('tetap menerima peta opsi yang bernilai nol', () => {
+    // Nol adalah lantai skala, bukan hukuman: jawaban yang salah memang tidak
+    // menyumbang apa-apa, dan itu rancangan yang sah.
+    const hasil = bacaSkema([
+      KEPALA_SKEMA,
+      [
+        's1',
+        'Q1',
+        'Q1',
+        'd',
+        'peta-opsi',
+        '{"peta":{"tidak tahu":0,"benar":1},"skorMaks":1}',
+        1,
+        1,
+        'nol',
+      ],
+    ]);
+
     expect(hasil.masalah).toEqual([]);
     expect(hasil.baris[0]?.butir[0]?.aturan).toEqual({
       jenis: 'peta-opsi',
-      peta: { salah: -1, 'tidak tahu': 0, benar: 1 },
+      peta: { 'tidak tahu': 0, benar: 1 },
       skorMaks: 1,
     });
   });
