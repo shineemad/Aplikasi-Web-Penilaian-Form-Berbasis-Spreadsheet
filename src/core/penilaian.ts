@@ -105,21 +105,51 @@ export function nilaiBerlaku(baris: BarisPenilaian[]): Map<string, HasilBerlaku>
 }
 
 /**
- * Entri yang respondennya tidak ada di daftar mana pun (C7).
+ * Mengapa sebuah baris `Penilaian` tidak bisa direkap. Keduanya bisa muncul
+ * bersamaan, dan menyebut satu saja membuat admin memperbaiki satu hal lalu
+ * mengira selesai.
+ */
+export type SebabYatim = 'responden' | 'kriteria';
+
+export interface BarisYatim {
+  entri: HasilBerlaku;
+  sebab: SebabYatim[];
+}
+
+/**
+ * Entri yang tidak punya tempat mendarat: respondennya tidak ada di daftar mana
+ * pun (C7), atau kriterianya tidak ada di `Skema` mana pun.
+ *
+ * Kriteria yatim bukan sekadar baris yang luput dari rekap. Sejak koreksi D2,
+ * baris `Penilaian` untuk kolom non-`manual` berlaku sebagai koreksi atas skor
+ * otomatis — sehingga kriteria yang salah eja berarti penilai mengira sudah
+ * membetulkan sebuah nilai, padahal tidak ada butir yang berubah.
  *
  * Dipisahkan dari `nilaiBerlaku` karena fungsi itu hanya menerima baris
- * `Penilaian` dan memang tidak punya cara tahu responden mana yang sah.
- * Memisahkannya juga membuat penandaan menjadi langkah yang sengaja dipanggil,
- * bukan efek samping yang mudah terlewat.
+ * `Penilaian` dan memang tidak punya cara tahu responden maupun butir mana yang
+ * sah. Memisahkannya juga membuat penandaan menjadi langkah yang sengaja
+ * dipanggil, bukan efek samping yang mudah terlewat.
+ *
+ * Keduanya dibandingkan **persis**, tanpa normalisasi tambahan. Nilai manual
+ * sampai ke agregator sebagai peta berkunci `kriteria` apa adanya yang dicari
+ * dengan `kolomAsal` apa adanya; menormalkan lebih jauh di sini akan menjawab
+ * "dikenal" untuk baris yang justru diabaikan diam-diam saat menghitung.
  */
 export function cariYatim(
   hasil: Map<string, HasilBerlaku>,
   idDikenal: Iterable<string>,
-): HasilBerlaku[] {
-  const dikenal = new Set(idDikenal);
-  const yatim: HasilBerlaku[] = [];
+  kriteriaDikenal: Iterable<string>,
+): BarisYatim[] {
+  const responden = new Set(idDikenal);
+  const kriteria = new Set(kriteriaDikenal);
+  const yatim: BarisYatim[] = [];
+
   for (const entri of hasil.values()) {
-    if (!dikenal.has(entri.respondenId)) yatim.push(entri);
+    const sebab: SebabYatim[] = [];
+    if (!responden.has(entri.respondenId)) sebab.push('responden');
+    if (!kriteria.has(entri.kriteria)) sebab.push('kriteria');
+    if (sebab.length > 0) yatim.push({ entri, sebab });
   }
+
   return yatim;
 }

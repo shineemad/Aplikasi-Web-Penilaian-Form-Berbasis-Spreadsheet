@@ -198,17 +198,48 @@ describe('cariYatim', () => {
   ]);
 
   it('menandai entri yang respondennya tidak ada di daftar', () => {
-    const yatim = cariYatim(hasil, ['a1', 'a2']);
+    const yatim = cariYatim(hasil, ['a1', 'a2'], ['K1', 'K2']);
     expect(yatim).toHaveLength(1);
-    expect(yatim[0]?.respondenId).toBe('salah-ketik');
-    expect(yatim[0]?.kriteria).toBe('K2');
+    expect(yatim[0]?.entri.respondenId).toBe('salah-ketik');
+    expect(yatim[0]?.entri.kriteria).toBe('K2');
+    expect(yatim[0]?.sebab).toEqual(['responden']);
   });
 
-  it('tidak menandai apa pun ketika seluruh responden dikenal', () => {
-    expect(cariYatim(hasil, ['a1', 'salah-ketik'])).toHaveLength(0);
+  it('tidak menandai apa pun ketika responden dan kriteria sama-sama dikenal', () => {
+    expect(cariYatim(hasil, ['a1', 'salah-ketik'], ['K1', 'K2'])).toHaveLength(0);
   });
 
   it('menandai semuanya ketika daftar responden kosong', () => {
-    expect(cariYatim(hasil, [])).toHaveLength(2);
+    expect(cariYatim(hasil, [], ['K1', 'K2'])).toHaveLength(2);
+  });
+
+  it('menandai kriteria yang tidak ada di Skema mana pun', () => {
+    // Setelah D2, baris berkriteria asing bukan sekadar baris yang tak terekap:
+    // ia koreksi yang tidak pernah diterapkan ke butir mana pun. Penilai
+    // mengira sudah membetulkan nilai, padahal tidak ada yang berubah.
+    const yatim = cariYatim(hasil, ['a1', 'salah-ketik'], ['K1']);
+    expect(yatim).toHaveLength(1);
+    expect(yatim[0]?.entri.kriteria).toBe('K2');
+    expect(yatim[0]?.sebab).toEqual(['kriteria']);
+  });
+
+  it('menyebut kedua sebab ketika responden dan kriteria sama-sama asing', () => {
+    // Satu sebab saja membuat admin memperbaiki satu hal lalu mengira selesai.
+    const yatim = cariYatim(hasil, ['a1'], ['K1']);
+    expect(yatim).toHaveLength(1);
+    expect(yatim[0]?.sebab).toEqual(['responden', 'kriteria']);
+  });
+
+  it('membandingkan kriteria persis seperti agregator mencocokkannya', () => {
+    // `nilaiManualUntukSesi` memakai `kriteria` apa adanya sebagai kunci peta
+    // yang dicari agregator lewat `kolomAsal`. Kalau sensor ini menormalkan
+    // lebih jauh daripada itu, ia akan menjawab "dikenal" untuk baris yang
+    // justru diabaikan diam-diam saat menghitung — kebalikan dari gunanya.
+    const berspasi = nilaiBerlaku([
+      barisUji({ penilaianId: 1, respondenId: 'a1', kriteria: 'Butir  A', nilai: 5 }),
+    ]);
+    expect(cariYatim(berspasi, ['a1'], ['Butir  A'])).toHaveLength(0);
+    expect(cariYatim(berspasi, ['a1'], ['Butir A'])).toHaveLength(1);
+    expect(cariYatim(berspasi, ['a1'], ['butir  a'])).toHaveLength(1);
   });
 });
